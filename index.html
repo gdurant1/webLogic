@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Logic Gate Simulator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Top menu bar -->
+<header id="app-header">
+    <div class="header-side"></div>
+    <div id="logo">Logic Gate Simulator</div>
+    <div class="header-side" id="header-right">
+        <div id="account">
+            <button type="button" id="btn-login">Sign In</button>
+        </div>
+        <button type="button" id="btn-lonly" title="Lonly?">Lonly?</button>
+        <button type="button" id="close-btn">&times;</button>
+    </div>
+</header>
+
+<!-- Circuit tabs -->
+<div id="tabs">
+    <div class="tab active">
+        <input type="text" class="tab-name-input" value="Main" aria-label="Project name">
+        <span class="tab-close" title="Close tab">&times;</span>
+    </div>
+    <button type="button" id="add-tab">+</button>
+</div>
+
+<!-- Toolbar -->
+<div id="toolbar">
+    <button type="button" id="btn-save" title="Save">save</button>
+    <button type="button" id="btn-print" title="Print">print</button>
+    <button type="button" id="btn-clear-all" title="Clear All">clear-all</button>
+    <button type="button" id="btn-undo" title="Undo">&lt;</button>
+    <button type="button" id="btn-redo" title="Redo">&gt;</button>
+    <button type="button" id="btn-select" title="Select">select</button>
+    <button type="button" id="btn-pan" title="Pan">pan</button>
+    <button type="button" id="btn-play" title="Play: cycle through every input/output combination on the canvas">&#9654;</button>
+    <button type="button" id="btn-stop" title="Stop">&#9632;</button>
+    <button type="button" id="btn-multiselect" title="Multi-select">multiselect</button>
+    <button type="button" id="btn-cut" title="Cut">cut</button>
+    <button type="button" id="btn-copy" title="Copy">copy</button>
+    <button type="button" id="btn-paste" title="Paste">paste</button>
+    <button type="button" id="btn-delete" title="Delete">delete</button>
+    <button type="button" id="btn-flip-h" title="Flip Horizontal">flip-h</button>
+    <button type="button" id="btn-flip-v" title="Flip Vertical">flip-v</button>
+    <button type="button" id="btn-group" title="Group">group</button>
+    <button type="button" id="btn-grid" title="Grid">grid</button>
+    <button type="button" id="btn-note" title="Add note">&#9998;</button>
+    <button type="button" id="btn-help" title="Help">?</button>
+</div>
+
+<!-- Main body -->
+<div id="main-content">
+
+    <!-- Left drag-source panels -->
+    <aside id="left-panel">
+
+        <section class="panel" id="input-controls">
+            <h3>Input Controls</h3>
+            <div class="panel-items">
+                <div class="palette-item" draggable="true" data-type="toggle-switch">Toggle Switch</div>
+                <div class="palette-item" draggable="true" data-type="push-button">Push Button</div>
+                <div class="palette-item" draggable="true" data-type="clock">Clock</div>
+                <div class="palette-item" draggable="true" data-type="high-constant">High Constant</div>
+                <div class="palette-item" draggable="true" data-type="low-constant">Low Constant</div>
+            </div>
+        </section>
+
+        <section class="panel" id="output-controls">
+            <h3>Output Controls</h3>
+            <div class="panel-items">
+                <div class="palette-item" draggable="true" data-type="light-bulb">Light Bulb</div>
+                <div class="palette-item" draggable="true" data-type="four-bit-digit">4-Bit Digit</div>
+            </div>
+        </section>
+
+        <section class="panel" id="logic-gates">
+            <h3>Logic Gates</h3>
+            <div class="panel-items">
+                <div class="palette-item" draggable="true" data-type="buffer" data-min-inputs="1" data-default-inputs="1">Buffer</div>
+                <div class="palette-item" draggable="true" data-type="not" data-min-inputs="1" data-default-inputs="1">NOT Gate</div>
+                <div class="palette-item" draggable="true" data-type="and" data-min-inputs="2" data-default-inputs="2">AND Gate</div>
+                <div class="palette-item" draggable="true" data-type="nand" data-min-inputs="2" data-default-inputs="2">NAND Gate</div>
+                <div class="palette-item" draggable="true" data-type="or" data-min-inputs="2" data-default-inputs="2">OR Gate</div>
+                <div class="palette-item" draggable="true" data-type="nor" data-min-inputs="2" data-default-inputs="2">NOR Gate</div>
+                <div class="palette-item" draggable="true" data-type="xor" data-min-inputs="2" data-default-inputs="2">XOR Gate</div>
+                <div class="palette-item" draggable="true" data-type="xnor" data-min-inputs="2" data-default-inputs="2">XNOR Gate</div>
+                <div class="palette-item" draggable="true" data-type="tri-state" data-min-inputs="2" data-default-inputs="2">Tri-State</div>
+            </div>
+        </section>
+
+    </aside>
+
+    <!-- Canvas / workspace -->
+    <div id="canvas-wrapper">
+        <button type="button" id="btn-collapse-left" title="Collapse/expand left panel">&laquo;</button>
+        <div id="canvas-controls">
+            <button type="button" id="btn-step-back" title="Step back 1 input/output combination">&lt;</button>
+            <button type="button" id="btn-step-forward" title="Step forward 1 input/output combination">&gt;</button>
+            <button type="button" id="btn-eraser" title="Clear item: click here, then click a gate/wire/control to erase it">&#9003;</button>
+        </div>
+        <div id="canvas">
+            <!-- gates/controls dropped here by JS, as clones of the
+                 <template>s below -->
+            <svg id="wire-layer">
+                <!-- JS draws one <path class="wire"> per connection here,
+                     on top of the controls/gates in #canvas -->
+            </svg>
+        </div>
+        <button type="button" id="btn-collapse-right" title="Collapse/expand right panel">&raquo;</button>
+    </div>
+
+    <!-- Right side: Truth Tables -->
+    <aside id="right-panel">
+
+        <section class="panel" id="truth-tables">
+            <h3>Truth Tables</h3>
+            <!-- individual gate tables and/or logic-circuit groups appended here by JS -->
+            <div id="truth-tables-list"></div>
+            <!-- template for a master truth table, cloned by JS for each connected circuit;
+                 <details>/<summary> gives native collapse/expand -->
+            <template id="logic-circuit-template">
+                <details class="logic-circuit">
+                    <summary class="logic-circuit-title">Logic Circuit</summary>
+                    <div class="logic-circuit-body">
+                        <!-- master truth table for the circuit, plus the individual gate
+                             tables it's made of, inserted here by JS -->
+                    </div>
+                </details>
+            </template>
+        </section>
+    </aside>
+
+</div>
+
+<!-- Canvas control templates -->
+<template id="tpl-toggle-switch">
+    <div class="control toggle-switch" data-type="toggle-switch">
+        <label class="switch-body">
+            <input type="checkbox" class="switch-input">
+            <span class="switch-track"><span class="switch-knob"></span></span>
+        </label>
+        <span class="node node-out"></span>
+    </div>
+</template>
+
+<template id="tpl-push-button">
+    <div class="control push-button" data-type="push-button">
+        <button type="button" class="push-button-face">
+            <span class="push-button-inner"></span>
+        </button>
+        <span class="node node-out"></span>
+    </div>
+</template>
+
+<template id="tpl-clock">
+    <div class="control clock" data-type="clock">
+        <span class="clock-face"><span class="clock-indicator"></span></span>
+        <span class="node node-out"></span>
+    </div>
+</template>
+
+<template id="tpl-high-constant">
+    <div class="control high-constant" data-type="high-constant">
+        <span class="constant-face">1</span>
+        <span class="node node-out"></span>
+    </div>
+</template>
+
+<template id="tpl-low-constant">
+    <div class="control low-constant" data-type="low-constant">
+        <span class="constant-face">0</span>
+        <span class="node node-out"></span>
+    </div>
+</template>
+
+<template id="tpl-light-bulb">
+    <div class="control light-bulb" data-type="light-bulb">
+        <span class="node node-in unattached"></span>
+        <span class="bulb-stack">
+            <span class="bulb-glass"><span class="bulb-filament"></span></span>
+            <span class="bulb-base"></span>
+        </span>
+    </div>
+</template>
+
+<template id="tpl-four-bit-digit">
+    <div class="control four-bit-digit" data-type="four-bit-digit">
+        <span class="digit-nodes">
+            <!-- index 0 = top node, per spec -->
+            <span class="node node-in unattached" data-bit="0"></span>
+            <span class="node node-in unattached" data-bit="1"></span>
+            <span class="node node-in unattached" data-bit="2"></span>
+            <span class="node node-in unattached" data-bit="3"></span>
+        </span>
+        <span class="digit-display">0</span>
+    </div>
+</template>
+
+<template id="tpl-logic-gate">
+    <div class="control logic-gate" data-type="">
+        <span class="gate-inputs"><!-- JS-populated .node.node-in rows --></span>
+        <span class="gate-body"></span>
+        <span class="node node-out"></span>
+    </div>
+</template>
+
+<!-- Bottom status/playback bar -->
+<footer id="status-bar">
+    <span id="status-dot"></span>
+    <button type="button" id="btn-zoom-out" title="Zoom out">zoom-out</button>
+    <input type="range" id="zoom-slider" min="50" max="200" step="10" value="100">
+    <button type="button" id="btn-zoom-in" title="Zoom in">zoom-in</button>
+    <label id="dark-mode-switch" for="dark-mode-toggle">
+        Dark Mode
+        <input type="checkbox" id="dark-mode-toggle">
+    </label>
+</footer>
+
+<!-- Note popup template -->
+<div id="note-popup" hidden>
+    <label for="note-title">Title:</label>
+    <input type="text" id="note-title">
+    <label for="note-body">Note:</label>
+    <textarea id="note-body"></textarea>
+    <div id="note-input-count-section" hidden>
+        <label for="note-input-count">Input Count</label>
+        <div class="stepper">
+            <button type="button" id="note-input-count-decrease" class="stepper-btn" aria-label="Decrease input count">&minus;</button>
+            <input type="number" id="note-input-count" min="1" value="2">
+            <button type="button" id="note-input-count-increase" class="stepper-btn" aria-label="Increase input count">+</button>
+        </div>
+    </div>
+</div>
+
+<!-- Standalone gate input-count popup -->
+<div id="input-count-popup" hidden>
+    <div class="popup-titlebar">
+        <span class="popup-brand">logic.ly</span>
+        <button type="button" id="input-count-close" class="popup-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="popup-body">
+        <h4 id="input-count-gate-name">Gate Name</h4>
+        <label for="input-count">Input Count</label>
+        <div class="stepper">
+            <button type="button" id="input-count-decrease" class="stepper-btn" aria-label="Decrease input count">&minus;</button>
+            <input type="number" id="input-count" min="1" value="2">
+            <button type="button" id="input-count-increase" class="stepper-btn" aria-label="Increase input count">+</button>
+        </div>
+    </div>
+</div>
+
+<!-- Clear All confirmation -->
+<div id="clear-all-confirm" hidden>
+    <p>Erase everything on the canvas?</p>
+    <button type="button" id="clear-all-yes">Yes</button>
+    <button type="button" id="clear-all-no">No</button>
+</div>
+
+<!-- Lonly? prompt -->
+<div id="lonly-prompt" hidden>
+    <p>Do you want to meet Someone?</p>
+    <button type="button" id="lonly-yes">Yes</button>
+    <button type="button" id="lonly-no">No</button>
+</div>
+
+<!-- Application Modules -->
+<script src="app.js"></script>
+<script src="canvas.js"></script>
+<script src="wires.js"></script>
+<script src="selection.js"></script>
+<script src="logic.js"></script>
+<script src="tables.js"></script>
+<script src="popups.js"></script>
+<script src="toolbar.js"></script>
+<script src="theme.js"></script>
+<script src="main.js"></script>
+
+</body>
+</html>

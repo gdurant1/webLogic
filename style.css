@@ -1,0 +1,1737 @@
+/* ============================================================
+   Logic Gate Simulator — style.css
+   Built from style-css-master-prompt.md (structure/behavior)
+   + confirmed color scheme (see design tokens below).
+
+   Notes for the programmer:
+   - Teal (#008080), Golden-Yellow (#ffc107) and Blue-gray (#5c6b73)
+     were not given exact hex values and are reasonable-guess
+     placeholders — swap the custom properties below if you want
+     different exact shades.
+   - Dark mode is NOT implemented here. JS is expected to toggle a
+     class (e.g. "dark-mode") on <body>; no rules react to it yet —
+     that pass is intentionally left for later.
+   - #note-popup / #input-count-popup / #clear-all-confirm /
+     #lonly-prompt / #game-container get a dimmed backdrop via
+     body::before + :has(), which needs a fairly modern browser
+     (Chrome/Edge/Safari current; Firefox 121+). No HTML changes
+     were made to add a dedicated backdrop element.
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+/* ---------- Design tokens ---------- */
+:root {
+    --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+
+    /* Chrome */
+    --color-header-bg: #212529;   /* dark gray top nav */
+    --color-header-text: #f8f9fa;
+    --color-toolbar-bg: #343a40;  /* lighter gray toolbar/status bar */
+    --color-toolbar-text: #f8f9fa;
+
+    /* Canvas */
+    --color-canvas-bg: #f4f5f7;
+    --color-grid-dot: rgba(33, 37, 41, 0.14);
+    --color-gate-bg: #ffffff;
+    --color-gate-border: #212529;
+
+    /* State indicators */
+    --color-true: #ff6f00;   /* bright orange */
+    --color-false: #5c6b73;  /* blue-gray (reasonable guess) */
+    --color-error: #ff1744;  /* bright neon red */
+
+    /* I/O coding */
+    --color-input: #008080;   /* teal (reasonable guess) */
+    --color-output: #ffc107;  /* golden-yellow (reasonable guess) */
+
+    /* Panels / tables */
+    --color-panel-header-bg: #191970;  /* dark cobalt/purple */
+    --color-panel-header-text: #ffffff;
+    --color-panel-bg: #d0e1fd;         /* pale cornflower blue */
+
+    /* Generic neutrals */
+    --color-bg: #ffffff;
+    --color-text: #212529;
+    --color-border: #ccc;
+    --color-focus: var(--color-output);
+
+    /* Dark-mode toggle track/thumb (semantic reuse of true/false) */
+    --switch-on: var(--color-true);
+    --switch-off: var(--color-false);
+
+    /* Blue/green accent for the panel collapse toggles (reasonable-guess shade) */
+    --color-collapse-accent: #1a8f8f;
+    --color-collapse-accent-hover: #147373;
+
+    /* "Signal on" color for control faces (toggle switch, push button,
+       etc.) — reuses the existing true-state orange so a 1/on signal
+       always reads the same color everywhere in the app. */
+    --color-signal-on: var(--color-true);
+    --color-signal-off: #ffffff;
+
+    /* Unattached-input-node highlight (reasonable-guess green — no
+       exact shade was specified). */
+    --color-node-unattached: #2e7d32;
+
+    /* Selection highlight for a gate/switch/wire the user has clicked
+       (distinct from --color-focus, which is keyboard-focus-only) —
+       reasonable-guess blue, no exact shade was specified. */
+    --color-selected: #2979ff;
+
+    /* Wire default (unpowered) color; JS overrides per-wire via
+       .wire.signal-high / .wire.signal-low to reflect the signal it
+       carries (see those rules below). */
+    --color-wire: var(--color-gate-border);
+
+    /* Wire/state color guide:
+       white  = low constant / 0 / off      (reuses --color-signal-off)
+       orange = high constant / 1 / on      (reuses --color-true)
+       gray   = a signal that changes regularly (clock-driven wires)
+       red    = error / invalid action      (reuses --color-error) */
+    --color-wire-clock: #9e9e9e;
+
+    /* Length of the little stub line CSS draws between a node and the
+       control/gate body it belongs to (see "Node connector stubs"
+       below). Each control type may override this to match its own
+       gap so the line exactly bridges the visual space. */
+    --node-stub: 8px;
+}
+
+/* ---------- Dark mode: "Tokyo Night" ----------
+   JS toggles a `dark-mode` class on <body> via #dark-mode-toggle (the
+   checkbox already wired for this in HTML). Because every rule in
+   this file already reads colors from the custom properties above,
+   redefining those properties here is enough to re-theme the whole
+   app — no other selectors need to change.
+
+   KNOWN LIMITATION: the logic-gate and palette-item icons are baked
+   as literal-hex inline SVG data URIs (white fill / dark stroke) —
+   see section 8 below. Data URIs can't read CSS custom properties,
+   so those icons intentionally stay white-on-dark-outline in dark
+   mode too (this reads fine as a "chip on a dark canvas" look, same
+   as the reference screenshot's white gate bodies). Re-theming the
+   icons themselves would require a second, hand-authored set of dark
+   SVGs — not done in this pass. */
+body.dark-mode {
+    --color-header-bg: #16161e;
+    --color-header-text: #c0caf5;
+    --color-toolbar-bg: #1a1b26;
+    --color-toolbar-text: #c0caf5;
+
+    --color-canvas-bg: #1f2335;
+    --color-grid-dot: rgba(122, 162, 247, 0.18);
+    --color-gate-border: #7aa2f7;
+
+    --color-true: #ff9e64;
+    --color-false: #414868;
+    --color-error: #f7768e;
+
+    --color-input: #7dcfff;
+    --color-output: #e0af68;
+
+    --color-panel-header-bg: #2b2440;
+    --color-panel-header-text: #bb9af7;
+    --color-panel-bg: #1f2335;
+
+    --color-bg: #1a1b26;
+    --color-text: #c0caf5;
+    --color-border: #414868;
+
+    --color-collapse-accent: #7dcfff;
+    --color-collapse-accent-hover: #5ab8e6;
+
+    /* "Off" surfaces go dark-surface instead of white, so an unlit
+       bulb/switch/constant doesn't glow against the dark canvas. */
+    --color-signal-off: #24283b;
+
+    --color-node-unattached: #9ece6a;
+    --color-selected: #c0caf5;
+
+    --color-wire-clock: #565f89;
+}
+
+/* ---------- Reset / base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+    font-family: var(--font-mono);
+    color: var(--color-text);
+    background: var(--color-bg);
+    overflow: hidden;
+}
+
+button, input, textarea, select {
+    font-family: inherit;
+    font-size: inherit;
+    color: inherit;
+}
+
+button { cursor: pointer; }
+
+table { font-family: inherit; }
+
+/* Visible focus everywhere (never remove outlines without a replacement) */
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+}
+
+/* ============================================================
+   1. #app-header
+   ============================================================ */
+#app-header {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    height: 48px;
+    padding: 0 12px;
+    background: var(--color-header-bg);
+    color: var(--color-header-text);
+}
+
+/* Left spacer + right button group — equal grid columns either
+   side of #logo is what keeps the logo visually centered
+   regardless of how wide the right-hand controls are. */
+.header-side {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+}
+
+#header-right {
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+#logo {
+    font-weight: 700;
+    font-size: 1.05rem;
+    white-space: nowrap;
+    text-align: center;
+}
+
+#account {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+}
+
+/* "Login style" button: looks like a compact sign-in control.
+   Clicking it is expected to open #login-popup (see popups
+   section) — wiring that up is a JS task. */
+#btn-login {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    padding: 5px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+#btn-login::before {
+    content: "";
+    width: 14px;
+    height: 14px;
+    background-color: currentColor;
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4 20c0-4.4 3.6-7 8-7s8 2.6 8 7'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4 20c0-4.4 3.6-7 8-7s8 2.6 8 7'/%3E%3C/svg%3E");
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+}
+
+#btn-login:hover { background: rgba(255, 255, 255, 0.12); }
+
+#btn-lonly {
+    background: transparent;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    padding: 5px 8px;
+    font-size: 0.7rem;
+    flex: 0 0 auto;
+}
+
+#btn-lonly:hover { background: rgba(255, 255, 255, 0.12); }
+
+#close-btn {
+    flex: 0 0 auto;
+    background: transparent;
+    border: none;
+    font-size: 1.3rem;
+    line-height: 1;
+    padding: 4px 10px;
+    border-radius: 3px;
+}
+
+#close-btn:hover { background: rgba(255, 255, 255, 0.15); }
+
+/* ============================================================
+   2. #tabs
+   ============================================================ */
+#tabs {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 34px;
+    padding: 0 8px;
+    background: var(--color-toolbar-bg);
+    color: var(--color-toolbar-text);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px 3px 0 0;
+    padding: 4px 8px 4px 12px;
+    color: inherit;
+}
+
+.tab.active {
+    background: var(--color-canvas-bg);
+    color: var(--color-text);
+}
+
+/* Editable project-name field, replacing the old plain-text
+   tab label. Sized to content with a generous cap; JS decides
+   what "Main" becomes once the user renames it. */
+.tab-name-input {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    padding: 2px 4px;
+    width: 9ch;
+    max-width: 22ch;
+    color: inherit;
+}
+
+.tab-name-input:hover,
+.tab-name-input:focus {
+    border-color: var(--color-border);
+    background: rgba(255, 255, 255, 0.5);
+}
+
+.tab.active .tab-name-input:hover,
+.tab.active .tab-name-input:focus {
+    background: var(--color-bg);
+}
+
+.tab-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 2px;
+}
+
+.tab-close:hover { background: rgba(0, 0, 0, 0.15); }
+
+#add-tab {
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px dashed currentColor;
+    border-radius: 3px;
+    color: inherit;
+    padding: 0;
+}
+
+#add-tab:hover { background: rgba(255, 255, 255, 0.12); }
+
+/* ============================================================
+   3. #toolbar
+   ============================================================ */
+#toolbar {
+    flex: 0 0 auto;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+    background: var(--color-toolbar-bg);
+    color: var(--color-toolbar-text);
+    border-bottom: 1px solid var(--color-border);
+    overflow-x: auto;
+}
+
+#toolbar button {
+    flex: 0 0 auto;
+    height: 32px;
+    min-width: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    padding: 0 8px;
+    white-space: nowrap;
+}
+
+#toolbar button:hover { background: rgba(255, 255, 255, 0.12); }
+
+/* ============================================================
+   4. #main-content (three columns)
+   ============================================================ */
+#main-content {
+    flex: 1 1 auto;
+    display: flex;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* --- 4a / 4c: side panels (shared) --- */
+#left-panel,
+#right-panel {
+    flex: 0 0 240px;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: var(--color-bg);
+    overflow-y: auto;
+    transition: flex-basis 0.2s ease;
+}
+
+#left-panel { border-right: 1px solid var(--color-border); }
+#right-panel { border-left: 1px solid var(--color-border); }
+
+/* Collapse/expand tabs now live on #canvas-wrapper's own left/right
+   edges — sitting right on the border between the canvas and each
+   side panel, vertically centered, matching the reference screenshot
+   (rather than at the top of the panel itself). */
+#btn-collapse-left,
+#btn-collapse-right {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 5;
+    width: 16px;
+    height: 44px;
+    font-size: 0.7rem;
+    line-height: 1;
+    color: #ffffff;
+    background: var(--color-collapse-accent);
+    border: none;
+    padding: 0;
+}
+
+#btn-collapse-left {
+    left: 0;
+    border-radius: 0 4px 4px 0;
+}
+
+#btn-collapse-right {
+    right: 0;
+    border-radius: 4px 0 0 4px;
+}
+
+#btn-collapse-left:hover,
+#btn-collapse-right:hover { background: var(--color-collapse-accent-hover); }
+
+.panel {
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.panel h3 {
+    margin: 0;
+    padding: 8px 10px;
+    background: var(--color-panel-header-bg);
+    color: var(--color-panel-header-text);
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.panel-items {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    padding: 10px;
+    background: var(--color-panel-bg);
+}
+
+.palette-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 6px;
+    min-height: 68px;
+    padding: 8px 6px;
+    background: transparent;
+    border: none;
+    font-size: 0.7rem;
+    line-height: 1.2;
+    cursor: grab;
+    user-select: none;
+}
+
+.palette-item:active { cursor: grabbing; }
+
+/* Distinct color coding for Input vs Output controls (colorScheme.md:
+   "Teal for inputs, Golden-Yellow for outputs"). This is the only
+   place those two tokens are applied — the panel HEADERS keep the
+   shared cobalt/purple treatment per the same spec sentence, so the
+   accent lives on each palette item instead, as a top border. Logic
+   Gates palette items intentionally get no accent (they're neither
+   an input nor an output). */
+#input-controls .palette-item {
+    border-top: 3px solid var(--color-input);
+}
+
+#output-controls .palette-item {
+    border-top: 3px solid var(--color-output);
+}
+
+/* --- Collapsed side panels --- */
+#left-panel.collapsed,
+#right-panel.collapsed {
+    flex-basis: 40px;
+    overflow: hidden;
+}
+
+#left-panel.collapsed .panel,
+#right-panel.collapsed .panel {
+    display: none;
+}
+
+/* --- 4b: canvas area --- */
+#canvas-wrapper {
+    flex: 1 1 auto;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: var(--color-bg);
+    overflow: hidden;
+}
+
+#canvas-controls {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    z-index: 10;
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+#canvas-controls button {
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+}
+
+#canvas-controls button:hover { background: var(--color-canvas-bg); }
+
+#canvas {
+    flex: 1 1 auto;
+    position: relative;
+    margin: 12px;
+    overflow: auto;
+    background-color: var(--color-canvas-bg);
+    background-image: radial-gradient(var(--color-grid-dot) 1.5px, transparent 1.5px);
+    background-size: 20px 20px;
+    border: 2px solid var(--color-gate-border);
+    border-radius: 4px;
+}
+
+/* #wire-layer previously had NO size/position rule at all, so it
+   rendered at the SVG default of 300x150px in normal document flow —
+   every wire JS drew into it used real canvas-pixel coordinates that
+   fell far outside that tiny box, which is why wires were invisible.
+   Pin it over the whole scrollable canvas instead. */
+#wire-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    min-width: 3000px;
+    min-height: 3000px;
+    overflow: visible;
+    pointer-events: none; /* only individual .wire paths (below) are clickable */
+}
+
+/* --- 4c: truth tables panel & content --- */
+#truth-tables-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 10px;
+    background: var(--color-panel-bg);
+    overflow-y: auto;
+}
+
+#truth-tables-list table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--color-gate-bg);
+    font-size: 0.72rem;
+}
+
+#truth-tables-list th,
+#truth-tables-list td {
+    border: 1px solid var(--color-gate-border);
+    padding: 4px 8px;
+    text-align: center;
+}
+
+#truth-tables-list tbody tr {
+    cursor: pointer;
+}
+
+#truth-tables-list tbody tr:hover {
+    background: rgba(25, 25, 112, 0.1);
+}
+
+.logic-circuit {
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    background: var(--color-gate-bg);
+}
+
+.logic-circuit-title {
+    cursor: pointer;
+    padding: 6px 10px;
+    background: var(--color-panel-header-bg);
+    color: var(--color-panel-header-text);
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.logic-circuit-body {
+    padding: 10px 10px 12px 20px;
+    margin-left: 6px;
+    border-left: 2px solid var(--color-panel-header-bg);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* ============================================================
+   5. #status-bar
+   ============================================================ */
+#status-bar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 36px;
+    padding: 0 12px;
+    background: var(--color-toolbar-bg);
+    color: var(--color-toolbar-text);
+    border-top: 1px solid var(--color-border);
+    font-size: 0.78rem;
+}
+
+#status-bar button {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    padding: 4px 8px;
+}
+
+#status-bar button:hover { background: rgba(255, 255, 255, 0.12); }
+
+#status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--color-false); /* default/idle; JS can swap true/false/error */
+    display: inline-block;
+}
+
+/* Zoom buttons: magnifying-glass-with-minus / magnifying-glass-with-plus
+   icons, using the same hide-text + mask-icon technique as the
+   toolbar icons above. */
+#btn-zoom-out,
+#btn-zoom-in {
+    font-size: 0;
+    width: 28px;
+    height: 28px;
+    position: relative;
+}
+
+#btn-zoom-out::before,
+#btn-zoom-in::before {
+    content: "";
+    display: block;
+    width: 18px;
+    height: 18px;
+    background-color: currentColor;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+}
+
+#btn-zoom-out::before {
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='10' cy='10' r='7'/%3E%3Cpath d='M21 21l-5.2-5.2'/%3E%3Cpath d='M7 10h6'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='10' cy='10' r='7'/%3E%3Cpath d='M21 21l-5.2-5.2'/%3E%3Cpath d='M7 10h6'/%3E%3C/svg%3E");
+}
+
+#btn-zoom-in::before {
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='10' cy='10' r='7'/%3E%3Cpath d='M21 21l-5.2-5.2'/%3E%3Cpath d='M10 7v6'/%3E%3Cpath d='M7 10h6'/%3E%3C/svg%3E");
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='10' cy='10' r='7'/%3E%3Cpath d='M21 21l-5.2-5.2'/%3E%3Cpath d='M10 7v6'/%3E%3Cpath d='M7 10h6'/%3E%3C/svg%3E");
+}
+
+#zoom-slider {
+    width: 110px;
+    accent-color: var(--color-output);
+}
+
+#dark-mode-switch {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+}
+
+/* Toggle switch built directly on the real <input type="checkbox">
+   (no extra span needed — background-image + background-position
+   double as the track + thumb) so it stays a functional checkbox
+   with no HTML changes. */
+#dark-mode-toggle {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 38px;
+    height: 20px;
+    margin: 0;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    background-color: var(--switch-off);
+    background-image: radial-gradient(circle 7px, #ffffff 7px, transparent 7.5px);
+    background-repeat: no-repeat;
+    background-position: 4px center;
+    transition: background-color 0.15s ease, background-position 0.15s ease;
+    flex: 0 0 auto;
+}
+
+#dark-mode-toggle:checked {
+    background-color: var(--switch-on);
+    background-position: calc(100% - 4px) center;
+}
+
+/* ============================================================
+   6. Popups / dialogs
+   ============================================================ */
+#note-popup,
+#input-count-popup,
+#clear-all-confirm,
+#lonly-prompt,
+#login-popup,
+#game-container {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 1000;
+    min-width: 260px;
+    max-width: 90vw;
+    padding: 16px 20px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-gate-border);
+    border-radius: 6px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+/* #input-count-popup and #login-popup carry their own dark
+   titlebar + inset body, so they override the generic padding
+   above rather than using it directly. */
+#input-count-popup,
+#login-popup {
+    padding: 0;
+    overflow: hidden;
+    min-width: 300px;
+}
+
+/* Dimmed backdrop, added without new markup (:has() support required) */
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    background: rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+}
+
+body:has(#note-popup:not([hidden]))::before,
+body:has(#input-count-popup:not([hidden]))::before,
+body:has(#clear-all-confirm:not([hidden]))::before,
+body:has(#lonly-prompt:not([hidden]))::before,
+body:has(#login-popup:not([hidden]))::before,
+body:has(#game-container:not([hidden]))::before {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+#note-popup label {
+    display: block;
+    margin: 10px 0 4px;
+    font-size: 0.8rem;
+}
+
+#note-popup label:first-of-type { margin-top: 0; }
+
+#note-popup input[type="text"] {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--color-border);
+    border-radius: 3px;
+}
+
+#note-popup textarea {
+    width: 100%;
+    min-height: 120px;
+    padding: 6px 8px;
+    border: 1px solid var(--color-border);
+    border-radius: 3px;
+    resize: vertical;
+}
+
+/* Shared titlebar for #input-count-popup and #login-popup: a dark
+   brand strip with a close (x) button, matching the reference
+   screenshot's "logic.ly" header bar. */
+.popup-titlebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--color-panel-header-bg);
+    color: var(--color-panel-header-text);
+}
+
+.popup-brand {
+    font-weight: 700;
+    font-size: 0.95rem;
+}
+
+.popup-close {
+    background: transparent;
+    border: none;
+    color: inherit;
+    font-size: 1.1rem;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
+.popup-close:hover { background: rgba(255, 255, 255, 0.15); }
+
+.popup-body {
+    padding: 16px 20px;
+}
+
+#input-count-gate-name {
+    margin: 0 0 14px;
+    color: var(--color-panel-header-bg);
+    font-size: 1.1rem;
+}
+
+.popup-body label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 0.85rem;
+}
+
+/* Input-count stepper: [-] [number] [+] as one joined control,
+   matching the reference screenshot. */
+.stepper {
+    display: flex;
+    align-items: stretch;
+    height: 34px;
+}
+
+.stepper input[type="number"] {
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: center;
+    border: 1px solid var(--color-border);
+    border-left: none;
+    border-right: none;
+    /* native spinner arrows intentionally left untouched */
+}
+
+.stepper-btn {
+    flex: 0 0 auto;
+    width: 34px;
+    background: var(--color-collapse-accent);
+    color: #ffffff;
+    border: none;
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.stepper-btn:hover { background: var(--color-collapse-accent-hover); }
+
+.stepper-btn:first-child { border-radius: 3px 0 0 3px; }
+.stepper-btn:last-child { border-radius: 0 3px 3px 0; }
+
+/* Buffer/NOT lock their input count at 1 (see popups.js), so their
+   +/- steppers are disabled rather than just silently doing nothing. */
+.stepper-btn:disabled {
+    background: var(--color-border);
+    color: var(--color-text);
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Login popup body reuses .popup-body; only its own field + actions
+   need extra rules. */
+#login-popup .popup-body label { margin-bottom: 6px; }
+
+#login-name-input {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--color-border);
+    border-radius: 3px;
+    margin-bottom: 14px;
+}
+
+.popup-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.popup-actions button {
+    padding: 6px 14px;
+    border-radius: 3px;
+    border: 1px solid var(--color-gate-border);
+    background: var(--color-gate-bg);
+}
+
+#login-submit {
+    background: var(--color-panel-header-bg);
+    border-color: var(--color-panel-header-bg);
+    color: #ffffff;
+}
+
+#clear-all-confirm p,
+#lonly-prompt p {
+    margin: 0 0 14px;
+    font-size: 0.9rem;
+}
+
+#clear-all-confirm button,
+#lonly-prompt button {
+    margin-right: 8px;
+    padding: 6px 14px;
+    background: var(--color-gate-bg);
+    border: 1px solid var(--color-gate-border);
+    border-radius: 3px;
+}
+
+#clear-all-confirm button:last-child,
+#lonly-prompt button:last-child {
+    margin-right: 0;
+}
+
+#clear-all-yes,
+#lonly-yes {
+    background: var(--color-panel-header-bg);
+    border-color: var(--color-panel-header-bg);
+    color: #ffffff;
+}
+
+#game-container {
+    min-width: 320px;
+    min-height: 240px;
+}
+
+/* ============================================================
+   7. Toolbar icons
+   ------------------------------------------------------------
+   These 13 buttons get real icons (the rest — undo/redo, which
+   must stay literal "<" "\>", and play/stop/note/help, which
+   already use ▶ ■ ✎ ? glyphs — are left as-is per spec).
+
+   Technique: each icon lives on a ::before pseudo-element sized
+   by a mask (not a background-image), filled with
+   background-color: currentColor. Buttons can't use ::before
+   for icons AND keep visible text, so the original text is
+   hidden with font-size: 0 (it stays in the DOM/accessible tree
+   for screen readers and the existing title="" tooltips —
+   nothing is removed, just visually collapsed). Because masks
+   pick up currentColor rather than baking in a fixed hex, these
+   icons automatically follow --color-toolbar-text now and
+   whatever color a later dark-mode pass sets, with no icon
+   redraws needed.
+   ============================================================ */
+
+#btn-save,
+#btn-print,
+#btn-clear-all,
+#btn-select,
+#btn-pan,
+#btn-multiselect,
+#btn-cut,
+#btn-copy,
+#btn-paste,
+#btn-delete,
+#btn-flip-h,
+#btn-flip-v,
+#btn-group,
+#btn-grid {
+    font-size: 0; /* hide literal text visually; stays for a11y/title */
+}
+
+#toolbar ::before {
+    content: "";
+    display: none;
+    width: 18px;
+    height: 18px;
+    background-color: currentColor;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+}
+
+#btn-save::before,
+#btn-print::before,
+#btn-clear-all::before,
+#btn-select::before,
+#btn-pan::before,
+#btn-multiselect::before,
+#btn-cut::before,
+#btn-copy::before,
+#btn-paste::before,
+#btn-delete::before,
+#btn-flip-h::before,
+#btn-flip-v::before,
+#btn-group::before,
+#btn-grid::before {
+    display: block;
+    -webkit-mask-image: var(--icon);
+    mask-image: var(--icon);
+}
+
+#btn-save {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 4h13l3 3v13H4z'/%3E%3Cpath d='M8 4v6h8V4'/%3E%3Cpath d='M8 14h8v6H8z'/%3E%3C/svg%3E");
+}
+
+#btn-print {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9V4h12v5'/%3E%3Crect x='4' y='9' width='16' height='8' rx='1'/%3E%3Cpath d='M7 17h10v4H7z'/%3E%3C/svg%3E");
+}
+
+#btn-clear-all {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 7h16'/%3E%3Cpath d='M9 7V4h6v3'/%3E%3Cpath d='M6 7l1 13h10l1-13'/%3E%3Cpath d='M10 11v6'/%3E%3Cpath d='M14 11v6'/%3E%3C/svg%3E");
+}
+
+#btn-select {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000' stroke='none'%3E%3Cpath d='M4 3l7 16 2-6 6-2z'/%3E%3C/svg%3E");
+}
+
+#btn-pan {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 12V6a1.5 1.5 0 0 1 3 0v5'/%3E%3Cpath d='M12 11V4a1.5 1.5 0 0 1 3 0v7'/%3E%3Cpath d='M15 11V6a1.5 1.5 0 0 1 3 0v8'/%3E%3Cpath d='M6 13V9a1.5 1.5 0 0 1 3 0v6'/%3E%3Cpath d='M6 15c0 4 2 7 7 7s6-3 6-6v-3'/%3E%3C/svg%3E");
+}
+
+#btn-multiselect {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-dasharray='3 3'%3E%3Crect x='4' y='4' width='16' height='16' rx='1'/%3E%3C/svg%3E");
+}
+
+#btn-cut {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='6' r='2'/%3E%3Ccircle cx='6' cy='18' r='2'/%3E%3Cpath d='M8 8l10 10'/%3E%3Cpath d='M8 16l10-10'/%3E%3C/svg%3E");
+}
+
+#btn-copy {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='8' y='8' width='12' height='12' rx='1'/%3E%3Cpath d='M5 15V5a1 1 0 0 1 1-1h10'/%3E%3C/svg%3E");
+}
+
+#btn-paste {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='6' y='4' width='12' height='17' rx='1'/%3E%3Crect x='9' y='2' width='6' height='4' rx='1'/%3E%3C/svg%3E");
+}
+
+#btn-delete {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12'/%3E%3Cpath d='M18 6L6 18'/%3E%3C/svg%3E");
+}
+
+#btn-flip-h {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3v18'/%3E%3Cpath d='M7 8L4 12l3 4'/%3E%3Cpath d='M17 8l3 4-3 4'/%3E%3C/svg%3E");
+}
+
+#btn-flip-v {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12h18'/%3E%3Cpath d='M8 7l4-3 4 3'/%3E%3Cpath d='M8 17l4 3 4-3'/%3E%3C/svg%3E");
+}
+
+#btn-group {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2'%3E%3Crect x='3' y='3' width='18' height='18' rx='2' stroke-dasharray='2 2'/%3E%3Crect x='4' y='4' width='7' height='7' rx='1'/%3E%3Crect x='13' y='13' width='7' height='7' rx='1'/%3E%3C/svg%3E");
+}
+
+#btn-grid {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2'%3E%3Crect x='3' y='3' width='18' height='18' rx='1'/%3E%3Cpath d='M3 9h18'/%3E%3Cpath d='M3 15h18'/%3E%3Cpath d='M9 3v18'/%3E%3Cpath d='M15 3v18'/%3E%3C/svg%3E");
+}
+
+/* ============================================================
+   8. Palette item icons (input/output controls + logic gates)
+   ------------------------------------------------------------
+   Unlike the toolbar icons above, these render actual gate/
+   control shapes with real fill+stroke (white body, dark
+   outline) matching "Logic Gates: pure white gate bodies with
+   clean, crisp dark outlines" from the color scheme — so they
+   use background-image, not a mask, and the colors are baked in
+   as literal hex (#ffffff / #212529) matching --color-gate-bg /
+   --color-gate-border. If those tokens change, update these
+   data URIs to match.
+   ============================================================ */
+
+.palette-item::before {
+    content: "";
+    display: block;
+    width: 44px;
+    height: 30px;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+    background-image: var(--icon);
+}
+
+/* --- Logic gates --- */
+
+.palette-item[data-type="buffer"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M12 8 L12 32 L42 20 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='7' cy='20' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='49' cy='20' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+.palette-item[data-type="not"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M10 8 L10 32 L38 20 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='6' cy='20' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='41.5' cy='20' r='3.5' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='51' cy='20' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+.palette-item[data-type="and"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M14 6 H22 A14 14 0 0 1 22 34 H14 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='7' cy='13' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='7' cy='27' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='47' cy='20' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+.palette-item[data-type="nand"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M12 6 H20 A14 14 0 0 1 20 34 H12 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='5' cy='13' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='5' cy='27' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='39.5' cy='20' r='3.5' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='49' cy='20' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+.palette-item[data-type="or"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M10 6 Q24 6 40 20 Q24 34 10 34 Q19 20 10 6 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='9' cy='12' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='9' cy='28' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='47' cy='20' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+.palette-item[data-type="nor"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M8 6 Q22 6 38 20 Q22 34 8 34 Q17 20 8 6 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='7' cy='12' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='7' cy='28' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='41.5' cy='20' r='3.5' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='51' cy='20' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+.palette-item[data-type="xor"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M12 6 Q26 6 42 20 Q26 34 12 34 Q21 20 12 6 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Cpath d='M6 6 Q15 20 6 34' fill='none' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='11' cy='12' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='11' cy='28' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='49' cy='20' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+.palette-item[data-type="xnor"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M10 6 Q24 6 40 20 Q24 34 10 34 Q19 20 10 6 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Cpath d='M4 6 Q13 20 4 34' fill='none' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='9' cy='12' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='9' cy='28' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='43.5' cy='20' r='3.5' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='53' cy='20' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+.palette-item[data-type="tri-state"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M12 10 L12 30 L36 20 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='7' cy='20' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='43' cy='20' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Cline x1='22' y1='10' x2='22' y2='4' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='22' cy='4' r='2.5' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+/* --- Input controls --- */
+
+.palette-item[data-type="toggle-switch"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Crect x='8' y='10' width='20' height='20' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Crect x='14' y='16' width='8' height='8' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Cline x1='28' y1='20' x2='46' y2='20' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='49' cy='20' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+.palette-item[data-type="push-button"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Ccircle cx='20' cy='20' r='13' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='20' cy='20' r='6' fill='none' stroke='%23212529' stroke-width='2'/%3E%3Cline x1='33' y1='20' x2='46' y2='20' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='49' cy='20' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+.palette-item[data-type="clock"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Crect x='8' y='7' width='26' height='26' rx='2' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Cpath d='M12 24 h4 v-8 h4 v8 h4 v-8 h4' fill='none' stroke='%23212529' stroke-width='2' stroke-linejoin='round'/%3E%3Cline x1='34' y1='20' x2='46' y2='20' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='49' cy='20' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+.palette-item[data-type="high-constant"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Crect x='9' y='7' width='24' height='26' rx='2' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ctext x='21' y='27' font-family='monospace' font-size='16' text-anchor='middle' fill='%23212529'%3E1%3C/text%3E%3Cline x1='33' y1='20' x2='46' y2='20' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='49' cy='20' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+.palette-item[data-type="low-constant"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Crect x='9' y='7' width='24' height='26' rx='2' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ctext x='21' y='27' font-family='monospace' font-size='16' text-anchor='middle' fill='%23212529'%3E0%3C/text%3E%3Cline x1='33' y1='20' x2='46' y2='20' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='49' cy='20' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+/* --- Output controls --- */
+
+.palette-item[data-type="light-bulb"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Ccircle cx='24' cy='16' r='11' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Cpath d='M19 25 h10 M20 29 h8 M21 33 h6' stroke='%23212529' stroke-width='2' fill='none'/%3E%3Cpath d='M19 11 l5 8 5-8' stroke='%23212529' stroke-width='1.5' fill='none'/%3E%3Cline x1='24' y1='33' x2='24' y2='38' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='24' cy='38' r='2.5' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+.palette-item[data-type="four-bit-digit"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Crect x='16' y='6' width='24' height='28' rx='2' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ctext x='28' y='27' font-family='monospace' font-size='18' font-weight='bold' text-anchor='middle' fill='%23212529'%3E8%3C/text%3E%3Ccircle cx='11' cy='11' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='11' cy='20' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='11' cy='29' r='3' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Cline x1='14' y1='11' x2='16' y2='11' stroke='%23212529' stroke-width='2'/%3E%3Cline x1='14' y1='20' x2='16' y2='20' stroke='%23212529' stroke-width='2'/%3E%3Cline x1='14' y1='29' x2='16' y2='29' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+/* ============================================================
+   9. Canvas control templates
+   ------------------------------------------------------------
+   Styles for the <template>s at the bottom of index.html, once
+   JS clones one into #canvas. Every element here is real HTML
+   (not a background-image icon) because these need per-instance
+   interactive state — unlike the palette drag-thumbnails above.
+   ============================================================ */
+
+.control {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    color: var(--color-gate-border);
+    /* No background/box here on purpose — a control is just its icon
+       (switch face, gate body, etc.) plus its nodes; the icon shapes
+       supply their own outlines, so wrapping the whole thing in
+       another filled box just reads as a stray white rectangle. */
+}
+
+/* --- Wire-connection nodes (small open circles) --- */
+.node {
+    position: relative; /* anchors the connector-stub pseudo-element below */
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--color-gate-bg);
+    border: 2px solid var(--color-gate-border);
+    flex: 0 0 auto;
+}
+
+/* ---------- Node connector stubs ----------
+   Every node sits one flex `gap` away from the control/gate body it
+   belongs to; without a visible link the node reads as a floating
+   dot. Draw a short line bridging exactly that gap: node-in nodes
+   sit BEFORE the body in markup, so their stub extends to the right;
+   node-out nodes sit AFTER it, so theirs extends to the left. Each
+   control sets --node-stub to its own gap value so the line always
+   reaches exactly to the body's edge. */
+.node-in::after,
+.node-out::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    height: 2px;
+    width: var(--node-stub, 8px);
+    background: var(--color-gate-border);
+    transform: translateY(-50%);
+}
+.node-in::after { left: 100%; }
+.node-out::before { right: 100%; }
+
+/* Node color states.
+   - At rest (whether or not a wire is attached) a node is just the
+     plain white/dark-outline dot above — no permanent tint.
+   - .drop-target is added by JS only while a wire is actively being
+     dragged out of an output node, and only to input nodes that
+     don't already have a wire — a live "you can drop here" cue.
+   - .reject-flash is a brief red pulse JS adds when a drop is
+     rejected (e.g. the target already has a wire attached). */
+.node-in.drop-target {
+    background: var(--color-node-unattached);
+    border-color: var(--color-node-unattached);
+}
+
+.node.reject-flash {
+    background: var(--color-error);
+    border-color: var(--color-error);
+}
+
+/* ---------- Wires ----------
+   Wires are drawn by JS as a pair of stacked <path> elements inside
+   the #wire-layer SVG that sits over #canvas (see index.html): a
+   thicker dark ".wire-outline" underneath, and the actual colored
+   ".wire" on top. The outline keeps a wire visible against the
+   canvas even when its signal color is white (low/off) — matching
+   the reference screenshot's outlined-wire look — instead of a pure
+   white line disappearing into the light canvas background.
+   JS toggles .signal-high / .signal-low / .signal-clock on .wire to
+   recolor it as its value changes, and .selected when clicked. */
+.wire-outline {
+    fill: none;
+    stroke: var(--color-gate-border);
+    stroke-width: 4;
+    stroke-linecap: round;
+    pointer-events: none;
+}
+
+.wire {
+    fill: none;
+    stroke: var(--color-wire);
+    stroke-width: 2;
+    stroke-linecap: round;
+    cursor: pointer;
+    pointer-events: stroke; /* clickable along its length, not just its bounding box */
+}
+
+/* Color guide: white = low/off, orange = high/on, gray = a signal
+   that changes regularly (clock-driven wires), red = error. */
+.wire.signal-high { stroke: var(--color-true); }
+.wire.signal-low { stroke: var(--color-signal-off); }
+.wire.signal-clock { stroke: var(--color-wire-clock); }
+
+/* A wire still being dragged out (not yet dropped on a node) — no
+   signal color yet, just a visible in-progress preview line. */
+.wire.pending {
+    stroke: var(--color-gate-border);
+    stroke-dasharray: 5 4;
+}
+
+/* ---------- Selection ----------
+   "Highlighted" = selected: the user clicked a gate, a control
+   (switch/button/etc.), or a wire, and it can now be dragged. JS
+   toggles .selected on the clicked .control or .wire; multi-select
+   (rubber-band / Ctrl-click, per #btn-multiselect) can put it on more
+   than one element at once. */
+.control.selected {
+    outline: 2px dashed var(--color-selected);
+    outline-offset: 3px;
+    border-radius: 4px;
+}
+
+.wire.selected {
+    stroke: var(--color-selected);
+    stroke-width: 3;
+}
+
+/* ---------- Toggle Switch ----------
+   Built as a real checkbox (same technique as #dark-mode-toggle), so
+   toggling on/off works with zero JavaScript. A square button
+   (.switch-track) with a smaller square inside it (.switch-knob);
+   pressing it toggles the checkbox, and the inner square is the only
+   part that changes color — the outer square stays a fixed frame. */
+.toggle-switch {
+    --node-stub: 10px;
+    gap: 10px;
+    padding: 6px;
+}
+
+.switch-body {
+    display: inline-block;
+    cursor: pointer;
+}
+
+.switch-input {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+}
+
+/* Outer square: a static frame, same fill at rest either way. */
+.switch-track {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: var(--color-gate-bg);
+    border: 2px solid var(--color-gate-border);
+    border-radius: 3px;
+}
+
+/* Inner square: off = same white/off face as everything else;
+   on = the same color used for High Constant / any other "on" face. */
+.switch-knob {
+    width: 16px;
+    height: 16px;
+    background: var(--color-signal-off);
+    border: 2px solid var(--color-gate-border);
+    border-radius: 2px;
+    transition: background-color 0.15s ease;
+}
+
+.switch-input:checked ~ .switch-track .switch-knob {
+    background: var(--color-signal-on);
+}
+
+.switch-input:focus-visible ~ .switch-track {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+}
+
+/* ---------- Push Button ----------
+   Pushed = mouse/keyboard held down. :active covers a physical
+   press with no JS; JS can add the same visual via a class if it
+   needs the "pushed" state to persist for a simulated cycle. */
+.push-button {
+    --node-stub: 10px;
+    gap: 10px;
+    padding: 6px;
+}
+
+.push-button-face {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--color-gate-bg);
+    border: 2px solid var(--color-gate-border);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.push-button-inner {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--color-signal-off);
+    border: 2px solid var(--color-gate-border);
+}
+
+.push-button-face:active .push-button-inner,
+.push-button-face.pushed .push-button-inner {
+    background: var(--color-signal-on);
+}
+
+/* ---------- Clock ----------
+   Auto-cycles on/off purely via a CSS animation. No real-world
+   timing/frequency was specified, so this is a placeholder blink;
+   JS should replace or drive this if the simulator needs the
+   clock's rate to be adjustable or tied to the play/step controls. */
+.clock {
+    --node-stub: 10px;
+    gap: 10px;
+    padding: 6px;
+}
+
+.clock-face {
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.clock-indicator {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    background: var(--color-signal-off);
+    border: 2px solid var(--color-gate-border);
+    animation: clock-blink 1.6s steps(1, end) infinite;
+}
+
+@keyframes clock-blink {
+    0%, 49.9%  { background: var(--color-signal-off); }
+    50%, 100%  { background: var(--color-signal-on); }
+}
+
+/* ---------- High / Low Constant ----------
+   Fixed, non-interactive states. */
+.high-constant,
+.low-constant {
+    --node-stub: 10px;
+    gap: 10px;
+    padding: 6px;
+}
+
+.constant-face {
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1rem;
+    border: 2px solid var(--color-gate-border);
+}
+
+.high-constant .constant-face {
+    background: var(--color-signal-on);
+}
+
+.low-constant .constant-face {
+    background: var(--color-signal-off);
+}
+
+/* ---------- Light Bulb ----------
+   Visual glow states are defined here; JS must add/remove ".on"
+   based on the signal the bulb actually receives, since that
+   depends on simulation logic this pass doesn't implement. */
+.light-bulb {
+    --node-stub: 6px;
+    gap: 6px;
+    padding: 6px;
+    flex-direction: row;
+}
+
+/* Groups glass+filament and the base underneath it into one column,
+   so the outer .light-bulb row is just [input node] + [this stack]. */
+.bulb-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.bulb-glass {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 2px solid var(--color-gate-border);
+    background: var(--color-signal-off);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.bulb-filament {
+    width: 14px;
+    height: 14px;
+    border: 1.5px solid var(--color-gate-border);
+    border-radius: 2px;
+    opacity: 0.6;
+}
+
+.bulb-base {
+    width: 18px;
+    height: 8px;
+    margin: -2px auto 0;
+    border: 2px solid var(--color-gate-border);
+    border-top: none;
+}
+
+.light-bulb.on .bulb-glass {
+    background: var(--color-signal-on);
+    box-shadow: 0 0 10px 3px var(--color-signal-on);
+}
+
+/* ---------- 4-Bit Digit ----------
+   Node order top-to-bottom is index 0-3 (index 0 = top node),
+   matching .digit-nodes' source order below. The displayed number
+   itself is written by JS — this only defines the container. */
+.four-bit-digit {
+    --node-stub: 8px;
+    gap: 8px;
+    padding: 6px;
+}
+
+.digit-nodes {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 56px;
+}
+
+.digit-display {
+    width: 34px;
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 1.3rem;
+    color: var(--color-signal-on);
+    border: 2px solid var(--color-gate-border);
+}
+
+/* ---------- Logic gates (buffer/not/and/nand/or/nor/xor/xnor/tri-state) ----------
+   The gate body reuses the same icon shapes already defined for the
+   left-panel palette items (below) via the shared --icon variable,
+   so the two stay visually identical without duplicating the SVGs.
+   Input nodes are a flex column so any input count (set by JS via
+   the input-count popup) lays out evenly with no per-count CSS. */
+.logic-gate {
+    --node-stub: 4px;
+    gap: 4px;
+    padding: 4px;
+}
+
+.gate-inputs {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+    align-self: stretch;
+}
+
+.gate-body {
+    width: 60px;
+    height: 40px;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+    background-image: var(--icon);
+}
+
+.logic-gate[data-type="buffer"] .gate-body,
+.palette-item[data-type="buffer"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M12 8 L12 32 L42 20 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+.logic-gate[data-type="not"] .gate-body,
+.palette-item[data-type="not"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M10 8 L10 32 L38 20 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='41.5' cy='20' r='3.5' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+.logic-gate[data-type="and"] .gate-body,
+.palette-item[data-type="and"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M14 6 H22 A14 14 0 0 1 22 34 H14 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+.logic-gate[data-type="nand"] .gate-body,
+.palette-item[data-type="nand"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M12 6 H20 A14 14 0 0 1 20 34 H12 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='39.5' cy='20' r='3.5' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+.logic-gate[data-type="or"] .gate-body,
+.palette-item[data-type="or"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M10 6 Q24 6 40 20 Q24 34 10 34 Q19 20 10 6 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+.logic-gate[data-type="nor"] .gate-body,
+.palette-item[data-type="nor"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M8 6 Q22 6 38 20 Q22 34 8 34 Q17 20 8 6 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='41.5' cy='20' r='3.5' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+.logic-gate[data-type="xor"] .gate-body,
+.palette-item[data-type="xor"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M12 6 Q26 6 42 20 Q26 34 12 34 Q21 20 12 6 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Cpath d='M6 6 Q15 20 6 34' fill='none' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+.logic-gate[data-type="xnor"] .gate-body,
+.palette-item[data-type="xnor"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M10 6 Q24 6 40 20 Q24 34 10 34 Q19 20 10 6 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Cpath d='M4 6 Q13 20 4 34' fill='none' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='43.5' cy='20' r='3.5' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+.logic-gate[data-type="tri-state"] .gate-body,
+.palette-item[data-type="tri-state"] {
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M12 10 L12 30 L36 20 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Cline x1='22' y1='10' x2='22' y2='4' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='22' cy='4' r='2.5' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
+}
+
+/* ============================================================
+   Implementation notes — requests handled only partially (or not
+   at all) by HTML/CSS alone, per the "comment what isn't handled"
+   instruction. Everything else in the request list is fully done
+   above.
+
+   1. Light Bulb "turns on when it receives a 1" — the .on class
+      and its glow styling are defined (.light-bulb.on), but JS
+      must add/remove that class based on the actual signal the
+      bulb's node receives; CSS has no access to simulation state.
+
+   2. 4-Bit Digit "converts the 1/0 it receives into a number" —
+      the container, 4 ordered input nodes, and a .digit-display
+      box are built, but computing/writing the decimal value is
+      simulation logic and must be done in JS.
+
+   3. "in" nodes stay their plain white/dark-outline look at rest,
+      whether or not a wire is attached. JS only adds `.drop-target`
+      to an input node — and only while a wire is actively being
+      dragged out of an output node, and only to nodes that don't
+      already have a wire — as a live "you can drop here" cue; it's
+      removed again as soon as the drag ends (drop or cancel). A
+      brief `.reject-flash` (red) is JS's cue for a rejected drop.
+
+   4. Clock on/off "switching" — implemented as a continuous CSS
+      @keyframes blink (no real timing/frequency was specified).
+      If the clock's rate needs to be adjustable, sync to the
+      play/step controls, or match a specific frequency, that
+      needs JS to drive it instead of (or in addition to) the
+      animation.
+
+   5. Gate input-count minimum ("only Buffer and NOT Gate have 1 as
+      the default minimum input"): each Logic Gates .palette-item
+      carries data-min-inputs / data-default-inputs (see index.html
+      section 3) so JS can read the right numbers. Buffer and NOT are
+      1; every other gate, Tri-State included, is 2 — Tri-State's
+      second input is its enable line (see the tri-state note below),
+      not a second data line. Buffer and NOT also never grow past that
+      1 input (JS clamps/disables their input-count stepper) — unlike
+      every other gate, whose input count IS adjustable. JS still has
+      to apply these: set the relevant number input's min attribute
+      and starting value (and, for the standalone #input-count-popup,
+      fill in #input-count-gate-name) when a gate's input-count
+      control opens.
+
+   6. Wires — .wire-outline / .wire / .wire.pending / .wire.signal-high /
+      .wire.signal-low / .wire.signal-clock / .wire.selected are fully
+      styled, and #wire-layer is now sized and positioned to actually
+      cover the canvas (it previously had no size/position rule at
+      all, which is why wires were invisible — they were being drawn
+      into a 300x150px default SVG box). JS draws a pair of stacked
+      <path>s (outline + colored) per wire on mousedown-drag from an
+      output node, enforces "one wire per input node, unlimited per
+      output node", recolors each wire as its signal changes
+      (.signal-clock for anything sourced from a Clock), and deletes
+      wires via the eraser tool.
+
+   7. Selection ("highlighted" = clicked, and draggable) — the
+      .control.selected / .wire.selected look is fully defined, but
+      JS owns adding/removing .selected (single click, Ctrl-click for
+      multi-select, or the #btn-multiselect rubber-band) and the
+      actual drag-to-reposition behavior once something is selected.
+
+   8. Dark mode "Tokyo Night" — body.dark-mode redefines every design
+      token, which re-themes the whole app automatically since all
+      rules already read from custom properties. The one thing that
+      does NOT re-theme is the logic-gate/palette-item icon artwork:
+      those are literal-hex inline SVG data URIs (white fill / dark
+      stroke, baked in at authoring time), which can't read CSS
+      variables. They intentionally stay white-body/dark-outline in
+      dark mode too — a deliberate "chip on a dark canvas" look, not
+      an oversight. Swapping the icons themselves for real dark-mode
+      versions is a separate, later asset pass.
+
+   9. Toggle Switch, Push Button, Clock, High/Low Constant, Light
+      Bulb, 4-Bit Digit, and generic Logic Gate now all exist as
+      <template> tags in index.html (section 4b1); JS still has to
+      clone the right one onto #canvas on drag-and-drop, position it,
+      and wire up simulation logic — none of that is a CSS concern.
+
+   10. Formerly-open questions, now resolved (no CSS changes needed
+       for any of these — pure JS/markup):
+       - Tri-State is a standard tri-state buffer: data in (index 0)
+         + active-low enable (index 1, matching the icon's separate
+         bubbled enable line). Output follows data when enable = 0;
+         when enable = 1 the output drives no signal (floating/
+         high-impedance) rather than forcing 0 or 1 — see
+         javaScript.md §4.
+       - #zoom-slider is 50%-200%, 10% per step (min/max/step/value
+         now set directly on the element in index.html).
+       - Dark-mode choice persists across reloads via localStorage —
+         see javaScript.md §10.
+       - The Note tool now opens on double-click too (not only
+         #btn-note-then-click), and for gates it also carries the
+         input-count stepper inline — see index.html's #note-popup
+         and javaScript.md §5.
+   ============================================================ */
