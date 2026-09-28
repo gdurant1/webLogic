@@ -12,7 +12,7 @@
      class (e.g. "dark-mode") on <body>; no rules react to it yet —
      that pass is intentionally left for later.
    - #note-popup / #input-count-popup / #clear-all-confirm /
-     #lonly-prompt / #game-container get a dimmed backdrop via
+     #lonly-prompt / #limit-popup / #game-container get a dimmed backdrop via
      body::before + :has(), which needs a fairly modern browser
      (Chrome/Edge/Safari current; Firefox 121+). No HTML changes
      were made to add a dedicated backdrop element.
@@ -60,9 +60,10 @@
     --switch-on: var(--color-true);
     --switch-off: var(--color-false);
 
-    /* Blue/green accent for the panel collapse toggles (reasonable-guess shade) */
-    --color-collapse-accent: #1a8f8f;
-    --color-collapse-accent-hover: #147373;
+    /* Teal accent for the input-count +/- stepper buttons (formerly shared
+       with the removed side-panel collapse buttons). */
+    --color-stepper: #1a8f8f;
+    --color-stepper-hover: #147373;
 
     /* "Signal on" color for control faces (toggle switch, push button,
        etc.) — reuses the existing true-state orange so a 1/on signal
@@ -138,8 +139,8 @@ body.dark-mode {
     --color-text: #c0caf5;
     --color-border: #414868;
 
-    --color-collapse-accent: #7dcfff;
-    --color-collapse-accent-hover: #5ab8e6;
+    --color-stepper: #7dcfff;
+    --color-stepper-hover: #5ab8e6;
 
     /* "Off" surfaces go dark-surface instead of white, so an unlit
        bulb/switch/constant doesn't glow against the dark canvas. */
@@ -415,44 +416,10 @@ summary:focus-visible,
     min-width: 0;
     background: var(--color-bg);
     overflow-y: auto;
-    transition: flex-basis 0.2s ease;
 }
 
 #left-panel { border-right: 1px solid var(--color-border); }
 #right-panel { border-left: 1px solid var(--color-border); }
-
-/* Collapse/expand tabs now live on #canvas-wrapper's own left/right
-   edges — sitting right on the border between the canvas and each
-   side panel, vertically centered, matching the reference screenshot
-   (rather than at the top of the panel itself). */
-#btn-collapse-left,
-#btn-collapse-right {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    z-index: 5;
-    width: 16px;
-    height: 44px;
-    font-size: 0.7rem;
-    line-height: 1;
-    color: #ffffff;
-    background: var(--color-collapse-accent);
-    border: none;
-    padding: 0;
-}
-
-#btn-collapse-left {
-    left: 0;
-    border-radius: 0 4px 4px 0;
-}
-
-#btn-collapse-right {
-    right: 0;
-    border-radius: 4px 0 0 4px;
-}
-
-#btn-collapse-left:hover,
-#btn-collapse-right:hover { background: var(--color-collapse-accent-hover); }
 
 .panel {
     display: flex;
@@ -512,18 +479,6 @@ summary:focus-visible,
     border-top: 3px solid var(--color-output);
 }
 
-/* --- Collapsed side panels --- */
-#left-panel.collapsed,
-#right-panel.collapsed {
-    flex-basis: 40px;
-    overflow: hidden;
-}
-
-#left-panel.collapsed .panel,
-#right-panel.collapsed .panel {
-    display: none;
-}
-
 /* --- 4b: canvas area --- */
 #canvas-wrapper {
     flex: 1 1 auto;
@@ -535,60 +490,50 @@ summary:focus-visible,
     overflow: hidden;
 }
 
-#canvas-controls {
-    position: absolute;
-    top: 20px;
-    left: 20px;
-    z-index: 10;
-    display: flex;
-    gap: 4px;
-    padding: 4px;
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    border-radius: 4px;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
-}
-
-#canvas-controls button {
-    width: 28px;
-    height: 28px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 3px;
-}
-
-#canvas-controls button:hover { background: var(--color-canvas-bg); }
-
+/* The canvas is a scrolling viewport onto a large "infinite" world
+   (WORLD_SIZE in app.js, a practical limit). Scrollbars stay visible.
+   - #canvas         the scroll viewport (this box)
+   - #canvas-sizer   resized by JS to (world size x zoom) so the scrollbars
+                     match the zoomed world; clips the scaled world exactly
+   - #canvas-world   holds controls + wire layer at UNSCALED size and is
+                     scaled as ONE layer by zoom, so every control keeps its
+                     original size relative to the others. The dot grid lives
+                     here so it pans and zooms with the content. */
 #canvas {
     flex: 1 1 auto;
     position: relative;
     margin: 12px;
     overflow: auto;
     background-color: var(--color-canvas-bg);
-    background-image: radial-gradient(var(--color-grid-dot) 1.5px, transparent 1.5px);
-    background-size: 20px 20px;
     border: 2px solid var(--color-gate-border);
     border-radius: 4px;
 }
 
-/* #wire-layer previously had NO size/position rule at all, so it
-   rendered at the SVG default of 300x150px in normal document flow —
-   every wire JS drew into it used real canvas-pixel coordinates that
-   fell far outside that tiny box, which is why wires were invisible.
-   Pin it over the whole scrollable canvas instead. */
+#canvas-sizer {
+    position: relative;
+    overflow: hidden;
+}
+
+#canvas-world {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
+    background-image: radial-gradient(var(--color-grid-dot) 1.5px, transparent 1.5px);
+    background-size: 20px 20px;
+}
+
+/* The wire layer fills the whole world (which JS sizes to WORLD_SIZE), so
+   wire coordinates are simply world coordinates. Only the individual .wire
+   paths (below) receive the mouse. */
 #wire-layer {
     position: absolute;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    min-width: 3000px;
-    min-height: 3000px;
     overflow: visible;
-    pointer-events: none; /* only individual .wire paths (below) are clickable */
+    pointer-events: none;
 }
 
 /* --- 4c: truth tables panel & content --- */
@@ -763,6 +708,7 @@ summary:focus-visible,
 #clear-all-confirm,
 #lonly-prompt,
 #login-popup,
+#limit-popup,
 #game-container {
     position: fixed;
     top: 50%;
@@ -805,6 +751,7 @@ body:has(#input-count-popup:not([hidden]))::before,
 body:has(#clear-all-confirm:not([hidden]))::before,
 body:has(#lonly-prompt:not([hidden]))::before,
 body:has(#login-popup:not([hidden]))::before,
+body:has(#limit-popup:not([hidden]))::before,
 body:has(#game-container:not([hidden]))::before {
     opacity: 1;
     pointer-events: auto;
@@ -900,14 +847,14 @@ body:has(#game-container:not([hidden]))::before {
 .stepper-btn {
     flex: 0 0 auto;
     width: 34px;
-    background: var(--color-collapse-accent);
+    background: var(--color-stepper);
     color: #ffffff;
     border: none;
     font-size: 1rem;
     line-height: 1;
 }
 
-.stepper-btn:hover { background: var(--color-collapse-accent-hover); }
+.stepper-btn:hover { background: var(--color-stepper-hover); }
 
 .stepper-btn:first-child { border-radius: 3px 0 0 3px; }
 .stepper-btn:last-child { border-radius: 0 3px 3px 0; }
@@ -1423,10 +1370,8 @@ body:has(#game-container:not([hidden]))::before {
 }
 
 /* ---------- Clock ----------
-   Auto-cycles on/off purely via a CSS animation. No real-world
-   timing/frequency was specified, so this is a placeholder blink;
-   JS should replace or drive this if the simulator needs the
-   clock's rate to be adjustable or tied to the play/step controls. */
+   Driven entirely by logic.js: one shared timer flips every clock's
+   value, and the .on class shows it (see .clock.on below). */
 .clock {
     --node-stub: 10px;
     gap: 10px;
@@ -1447,12 +1392,12 @@ body:has(#game-container:not([hidden]))::before {
     border-radius: 3px;
     background: var(--color-signal-off);
     border: 2px solid var(--color-gate-border);
-    animation: clock-blink 1.6s steps(1, end) infinite;
 }
 
-@keyframes clock-blink {
-    0%, 49.9%  { background: var(--color-signal-off); }
-    50%, 100%  { background: var(--color-signal-on); }
+/* JS (logic.js) adds .on while THIS clock's value is 1. Each clock keeps
+   its own value, so two clocks can be opposite each other. */
+.clock.on .clock-indicator {
+    background: var(--color-signal-on);
 }
 
 /* ---------- High / Low Constant ----------
@@ -1488,14 +1433,26 @@ body:has(#game-container:not([hidden]))::before {
    based on the signal the bulb actually receives, since that
    depends on simulation logic this pass doesn't implement. */
 .light-bulb {
-    --node-stub: 6px;
-    gap: 6px;
+    --node-stub: 8px;
+    gap: 8px;
     padding: 6px;
-    flex-direction: row;
+    flex-direction: column; /* bulb on top, input node centered BELOW it */
+    align-items: center;
+}
+
+/* The generic node stub runs sideways; the bulb's node is below the bulb,
+   so its stub runs UP to the base instead (wires enter from below). */
+.light-bulb .node-in::after {
+    top: auto;
+    bottom: 100%;
+    left: 50%;
+    width: 2px;
+    height: var(--node-stub, 8px);
+    transform: translateX(-50%);
 }
 
 /* Groups glass+filament and the base underneath it into one column,
-   so the outer .light-bulb row is just [input node] + [this stack]. */
+   so the outer .light-bulb column is just [this stack] + [input node]. */
 .bulb-stack {
     display: flex;
     flex-direction: column;
@@ -1662,12 +1619,10 @@ body:has(#game-container:not([hidden]))::before {
       removed again as soon as the drag ends (drop or cancel). A
       brief `.reject-flash` (red) is JS's cue for a rejected drop.
 
-   4. Clock on/off "switching" — implemented as a continuous CSS
-      @keyframes blink (no real timing/frequency was specified).
-      If the clock's rate needs to be adjustable, sync to the
-      play/step controls, or match a specific frequency, that
-      needs JS to drive it instead of (or in addition to) the
-      animation.
+   4. Clock on/off "switching" — driven by JS (logic.js). One shared
+      timer flips each clock's own value every 800 ms and toggles the
+      .on class; the indicator color is .clock.on above. There is no
+      CSS animation, so two clocks can be out of phase.
 
    5. Gate input-count minimum ("only Buffer and NOT Gate have 1 as
       the default minimum input"): each Logic Gates .palette-item
@@ -1685,15 +1640,14 @@ body:has(#game-container:not([hidden]))::before {
 
    6. Wires — .wire-outline / .wire / .wire.pending / .wire.signal-high /
       .wire.signal-low / .wire.signal-clock / .wire.selected are fully
-      styled, and #wire-layer is now sized and positioned to actually
-      cover the canvas (it previously had no size/position rule at
-      all, which is why wires were invisible — they were being drawn
-      into a 300x150px default SVG box). JS draws a pair of stacked
+      styled, and #wire-layer fills #canvas-world, so wire coordinates are
+      world coordinates. JS draws a pair of stacked
       <path>s (outline + colored) per wire on mousedown-drag from an
       output node, enforces "one wire per input node, unlimited per
       output node", recolors each wire as its signal changes
-      (.signal-clock for anything sourced from a Clock), and deletes
-      wires via the eraser tool.
+      (.signal-clock for anything sourced from a Clock). Wires are deleted
+      by selecting them and pressing Delete (the eraser tool was
+      removed).
 
    7. Selection ("highlighted" = clicked, and draggable) — the
       .control.selected / .wire.selected look is fully defined, but
@@ -1735,3 +1689,63 @@ body:has(#game-container:not([hidden]))::before {
          input-count stepper inline — see index.html's #note-popup
          and javaScript.md §5.
    ============================================================ */
+
+/* ============================================================
+   Limit / warning dialog (#limit-popup) and truth-table cap message
+   ------------------------------------------------------------
+   #limit-popup is the shared dialog behind limits.js (circuit gate limit,
+   speed warnings, oversized truth tables). popups.js sets one severity
+   class on it: limit-notice | limit-warning | limit-dire. It reuses the
+   fixed/centered dialog rules and backdrop above, plus --color-error and
+   --color-true so dark mode follows automatically.
+   ============================================================ */
+#limit-popup {
+    max-width: min(440px, 90vw);
+    border-left-width: 6px;
+}
+
+#limit-popup h4 {
+    margin: 0 0 8px;
+    font-size: 1.05rem;
+}
+
+#limit-popup p {
+    margin: 0 0 16px;
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+#limit-popup.limit-notice { border-left-color: var(--color-input); }
+#limit-popup.limit-warning { border-left-color: var(--color-true); }
+#limit-popup.limit-dire {
+    border-color: var(--color-error);
+    border-left-color: var(--color-error);
+    box-shadow: 0 0 0 2px var(--color-error), 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+#limit-popup.limit-dire h4 { color: var(--color-error); }
+
+#limit-confirm {
+    background: var(--color-panel-header-bg);
+    border-color: var(--color-panel-header-bg);
+    color: #ffffff;
+}
+#limit-popup.limit-dire #limit-confirm {
+    background: var(--color-error);
+    border-color: var(--color-error);
+}
+
+.table-cap-message {
+    padding: 8px 10px;
+    border: 1px dashed var(--color-gate-border);
+    font-size: 0.72rem;
+    line-height: 1.4;
+    background: var(--color-gate-bg);
+    color: var(--color-gate-border);
+}
+.table-cap-message p { margin: 0 0 6px; }
+.table-cap-message button {
+    padding: 4px 10px;
+    border: 1px solid var(--color-gate-border);
+    border-radius: 3px;
+    background: transparent;
+}

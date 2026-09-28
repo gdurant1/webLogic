@@ -97,21 +97,22 @@
 
     <!-- Canvas / workspace -->
     <div id="canvas-wrapper">
-        <button type="button" id="btn-collapse-left" title="Collapse/expand left panel">&laquo;</button>
-        <div id="canvas-controls">
-            <button type="button" id="btn-step-back" title="Step back 1 input/output combination">&lt;</button>
-            <button type="button" id="btn-step-forward" title="Step forward 1 input/output combination">&gt;</button>
-            <button type="button" id="btn-eraser" title="Clear item: click here, then click a gate/wire/control to erase it">&#9003;</button>
-        </div>
+        <!-- #canvas is the scrolling viewport of an "infinite" world.
+             #canvas-sizer is resized by JS to (world size x zoom) so the
+             scrollbars match; #canvas-world holds the controls and the wire
+             layer at unscaled size and is scaled as ONE layer by zoom. -->
         <div id="canvas">
-            <!-- gates/controls dropped here by JS, as clones of the
-                 <template>s below -->
-            <svg id="wire-layer">
-                <!-- JS draws one <path class="wire"> per connection here,
-                     on top of the controls/gates in #canvas -->
-            </svg>
+            <div id="canvas-sizer">
+                <div id="canvas-world">
+                    <!-- gates/controls dropped here by JS, as clones of the
+                         <template>s below -->
+                    <svg id="wire-layer">
+                        <!-- JS draws a pair of <path>s (outline + colored wire)
+                             per connection here, on top of the controls/gates -->
+                    </svg>
+                </div>
+            </div>
         </div>
-        <button type="button" id="btn-collapse-right" title="Collapse/expand right panel">&raquo;</button>
     </div>
 
     <!-- Right side: Truth Tables -->
@@ -180,11 +181,13 @@
 
 <template id="tpl-light-bulb">
     <div class="control light-bulb" data-type="light-bulb">
-        <span class="node node-in unattached"></span>
         <span class="bulb-stack">
             <span class="bulb-glass"><span class="bulb-filament"></span></span>
             <span class="bulb-base"></span>
         </span>
+        <!-- input node sits centered BELOW the bulb; data-side tells wires.js
+             the wire enters vertically (from below) instead of from the left -->
+        <span class="node node-in unattached" data-side="bottom"></span>
     </div>
 </template>
 
@@ -268,17 +271,18 @@
     <button type="button" id="lonly-no">No</button>
 </div>
 
-<!-- Application Modules -->
-<script src="app.js"></script>
-<script src="canvas.js"></script>
-<script src="wires.js"></script>
-<script src="selection.js"></script>
-<script src="logic.js"></script>
-<script src="tables.js"></script>
-<script src="popups.js"></script>
-<script src="toolbar.js"></script>
-<script src="theme.js"></script>
-<script src="main.js"></script>
+<!-- Limit / warning dialog (drawn by popups.js for limits.js) -->
+<div id="limit-popup" class="limit-warning" hidden role="alertdialog" aria-labelledby="limit-title" aria-describedby="limit-message">
+    <h4 id="limit-title">Warning</h4>
+    <p id="limit-message"></p>
+    <div class="popup-actions">
+        <button type="button" id="limit-cancel">Cancel</button>
+        <button type="button" id="limit-confirm">OK</button>
+    </div>
+</div>
+
+<!-- Application entry point: main.js imports every other module -->
+<script type="module" src="main.js"></script>
 
 </body>
 </html>

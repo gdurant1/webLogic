@@ -3,197 +3,199 @@
  * ---------------------------------------------------------------------------
  * Per javascript.md §2:
  *   - Palette drag-and-drop: reads data-type, clones the matching <template>
- *     (#tpl-<type>, or the shared #tpl-logic-gate for the 9 gate types) onto
- *     #canvas, and — for logic gates — reads data-min-inputs/data-default-
- *     inputs off the source .palette-item to build the right number of
- *     .node.node-in.unattached rows (htmlPromptForCSS.md §3, §4b1).
- *   - Control positioning: dragging a placed .control (or a selected group
- *     of them) around #canvas, updating x/y in app.js.
+ *     (#tpl-<type>, or the shared #tpl-logic-gate for the 9 gate types) into
+ *     the canvas world and — for logic gates — reads data-min-inputs /
+ *     data-default-inputs off the source .palette-item to build the right
+ *     number of .node.node-in rows.
+ *   - Control positioning: dragging a placed .control (or a selected group)
+ *     around the world, updating x/y in app.js. main.js's mousedown router
+ *     calls beginControlDrag(); this module registers no mousedown listener.
+ *
+ * Controls live in #canvas-world and are positioned in WORLD coordinates
+ * (unscaled pixels, 0 .. WORLD_SIZE). Zoom scales the whole world as one
+ * layer, so every control keeps its original size relative to the others.
  *
  * Also owns cleanup of a control's DOM element + node registrations when
- * app.js reports it removed, since app.js only manages state, not the DOM.
+ * app.js reports it removed (app.js only manages state, not the DOM).
  */
-(function () {
-    'use strict';
+import * as App from './app.js';
 
-    const canvas = document.getElementById('canvas');
-    const paletteItems = document.querySelectorAll('.palette-item');
+const viewport = document.getElementById('canvas');
+const world = document.getElementById('canvas-world');
+const paletteItems = document.querySelectorAll('.palette-item');
 
-    const GATE_TYPES = new Set(['buffer', 'not', 'and', 'nand', 'or', 'nor', 'xor', 'xnor', 'tri-state']);
+const DRAG_THRESHOLD_PX = 3;
+const CONTROL_MARGIN = 100; // keeps a control's top-left corner inside the world
 
-    // ---------------- Palette drag source ----------------
-    paletteItems.forEach(item => {
-        item.addEventListener('dragstart', (e) => {
-            e.dataTransfer.setData('text/plain', item.dataset.type);
-            e.dataTransfer.effectAllowed = 'copy';
-        });
+const clampToWorld = (value) => Math.min(App.WORLD_SIZE - CONTROL_MARGIN, Math.max(0, Math.round(value)));
+
+// ---------------- Palette drag source ----------------
+
+paletteItems.forEach((item) => {
+    item.addEventListener('dragstart', (event) => {
+        event.dataTransfer.setData('text/plain', item.dataset.type);
+        event.dataTransfer.effectAllowed = 'copy';
     });
+});
 
-    canvas.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'copy';
-    });
+viewport.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+});
 
-    canvas.addEventListener('drop', (e) => {
-        e.preventDefault();
-        const type = e.dataTransfer.getData('text/plain');
-        if (!type) return;
-        const rect = canvas.getBoundingClientRect();
-        const scale = window.WiresModule ? window.WiresModule.getScale() : 1;
-        // Land the control's top-left corner roughly under the cursor.
-        const left = (e.clientX - rect.left) / scale + canvas.scrollLeft - 30;
-        const top = (e.clientY - rect.top) / scale + canvas.scrollTop - 20;
-        placeControl(type, left, top);
-    });
+viewport.addEventListener('drop', (event) => {
+    event.preventDefault();
+    const type = event.dataTransfer.getData('text/plain');
+    if (!type) return;
+    const point = App.clientToWorld(event.clientX, event.clientY);
+    // Land the control's top-left corner roughly under the cursor.
+    placeControl(type, point.x - 30, point.y - 20);
+});
 
-    /**
-     * Clone the right <template> onto the canvas, register its nodes, and
-     * add it to the shared data model. (left, top) is the control's
-     * top-left corner, in unscaled canvas-local coordinates.
-     */
-    function placeControl(type, left, top, defaultInputs) {
-        const isGate = GATE_TYPES.has(type);
-        const tplId = isGate ? 'tpl-logic-gate' : 'tpl-' + type;
-        const tpl = document.getElementById(tplId);
-        if (!tpl) return null;
+// ---------------- Node registration helpers ----------------
 
-        const frag = tpl.content.cloneNode(true);
-        const el = frag.querySelector('.control');
-        const controlId = App.genControlId();
-        el.dataset.id = controlId;
-        el.style.position = 'absolute';
-        el.style.left = Math.max(0, Math.round(left)) + 'px';
-        el.style.top = Math.max(0, Math.round(top)) + 'px';
+const registerOutNode = (el, controlId) => {
+    const node = el.querySelector('.node-out');
+    if (!node) return;
+    const nodeId = `${controlId}-out`;
+    node.dataset.nodeId = nodeId;
+    App.registerNode(nodeId, { el: node, controlId, kind: 'out', index: 0 });
+};
 
-        let inputCount = 0;
-
-        if (isGate) {
-            el.dataset.type = type;
-            const paletteSource = document.querySelector('.palette-item[data-type="' + type + '"]');
-            const min = paletteSource ? parseInt(paletteSource.dataset.minInputs, 10) : 1;
-            const dflt = defaultInputs || (paletteSource ? parseInt(paletteSource.dataset.defaultInputs, 10) : 2);
-            inputCount = Math.max(min, dflt);
-            const inputsWrap = el.querySelector('.gate-inputs');
-            for (let i = 0; i < inputCount; i++) {
-                addGateInputNode(inputsWrap, controlId, i);
-            }
-            registerOutNode(el, controlId);
-        } else if (type === 'four-bit-digit') {
-            el.querySelectorAll('.node-in').forEach((node, i) => {
-                const nodeId = controlId + '-in-' + i;
-                node.dataset.nodeId = nodeId;
-                App.registerNode(nodeId, { el: node, controlId, kind: 'in', index: i });
-            });
-            inputCount = 4;
-        } else if (type === 'light-bulb') {
-            const node = el.querySelector('.node-in');
-            const nodeId = controlId + '-in-0';
-            node.dataset.nodeId = nodeId;
-            App.registerNode(nodeId, { el: node, controlId, kind: 'in', index: 0 });
-            inputCount = 1;
-        } else {
-            // toggle-switch, push-button, clock, high-constant, low-constant —
-            // source controls with only a single .node-out.
-            registerOutNode(el, controlId);
-        }
-
-        canvas.appendChild(el);
-
-        const control = {
-            id: controlId,
-            type,
-            el,
-            x: parseFloat(el.style.left),
-            y: parseFloat(el.style.top),
-            inputCount,
-        };
-        App.addControl(control);
-        // Fired in addition to control:add so logic.js can wire up
-        // interactive behavior (switch/button/clock listeners) once the
-        // element actually exists in the DOM.
-        App.emit('control:placed', control);
-        return control;
-    }
-
-    function registerOutNode(el, controlId) {
-        const node = el.querySelector('.node-out');
-        if (!node) return;
-        const nodeId = controlId + '-out';
+const registerInNodes = (el, controlId) => {
+    el.querySelectorAll('.node-in').forEach((node, index) => {
+        const nodeId = `${controlId}-in-${index}`;
         node.dataset.nodeId = nodeId;
-        App.registerNode(nodeId, { el: node, controlId, kind: 'out', index: 0 });
-    }
-
-    /** Exposed publicly so popups.js can grow a gate's input count later. */
-    function addGateInputNode(inputsWrap, controlId, index) {
-        const node = document.createElement('span');
-        node.className = 'node node-in unattached';
-        const nodeId = controlId + '-in-' + index;
-        node.dataset.nodeId = nodeId;
-        inputsWrap.appendChild(node);
         App.registerNode(nodeId, { el: node, controlId, kind: 'in', index });
-        return node;
+    });
+};
+
+/** Also used by popups.js to grow a gate's input count. */
+export const addGateInputNode = (inputsWrap, controlId, index) => {
+    const node = document.createElement('span');
+    node.className = 'node node-in unattached';
+    const nodeId = `${controlId}-in-${index}`;
+    node.dataset.nodeId = nodeId;
+    inputsWrap.appendChild(node);
+    App.registerNode(nodeId, { el: node, controlId, kind: 'in', index });
+    return node;
+};
+
+// ---------------- Placing a control ----------------
+
+/**
+ * Clone the right <template> into the world, register its nodes, and add it
+ * to the data model. (left, top) is the control's top-left corner in WORLD
+ * coordinates. Returns the new control, or null for an unknown type.
+ */
+export const placeControl = (type, left, top, defaultInputs) => {
+    const isGate = App.GATE_TYPES.has(type);
+    const template = document.getElementById(isGate ? 'tpl-logic-gate' : `tpl-${type}`);
+    if (!template) return null;
+
+    const el = template.content.cloneNode(true).querySelector('.control');
+    const controlId = App.genControlId();
+    el.dataset.id = controlId;
+    el.style.position = 'absolute';
+    el.style.left = `${clampToWorld(left)}px`;
+    el.style.top = `${clampToWorld(top)}px`;
+
+    let inputCount = 0;
+
+    if (isGate) {
+        el.dataset.type = type;
+        const source = document.querySelector(`.palette-item[data-type="${type}"]`);
+        const min = source ? parseInt(source.dataset.minInputs, 10) : 1;
+        const fallback = source ? parseInt(source.dataset.defaultInputs, 10) : 2;
+        inputCount = Math.max(min, defaultInputs || fallback);
+        const inputsWrap = el.querySelector('.gate-inputs');
+        for (let i = 0; i < inputCount; i++) addGateInputNode(inputsWrap, controlId, i);
+        registerOutNode(el, controlId);
+    } else if (type === 'four-bit-digit') {
+        registerInNodes(el, controlId);
+        inputCount = 4;
+    } else if (type === 'light-bulb') {
+        registerInNodes(el, controlId);
+        inputCount = 1;
+    } else {
+        // toggle-switch, push-button, clock, high-constant, low-constant:
+        // source controls with a single .node-out.
+        registerOutNode(el, controlId);
     }
 
-    // ---------------- DOM cleanup when app.js removes a control ----------------
-    App.events.addEventListener('control:remove', (e) => {
-        const control = e.detail;
-        control.el.querySelectorAll('[data-node-id]').forEach(n => App.unregisterNode(n.dataset.nodeId));
-        control.el.remove();
-    });
+    world.appendChild(el);
 
-    // ---------------- Repositioning placed controls ----------------
-    canvas.addEventListener('mousedown', (e) => {
-        if (window.WiresModule && window.WiresModule.isEraserActive()) return;
-        if (window.ToolbarModule && window.ToolbarModule.getActiveTool() === 'pan') return;
+    const control = {
+        id: controlId,
+        type,
+        el,
+        x: parseFloat(el.style.left),
+        y: parseFloat(el.style.top),
+        inputCount,
+    };
+    App.addControl(control);
+    // Fired in addition to control:add so logic.js / wires.js can attach
+    // behavior and measure geometry once the element is really in the DOM.
+    App.emit('control:placed', control);
+    return control;
+};
 
-        const controlEl = e.target.closest('.control');
-        if (!controlEl) return;
-        if (e.target.closest('.node')) return; // node drags belong to wires.js
-        if (e.target.closest('input, textarea, button, .switch-body')) return; // don't hijack interactive children
+// ---------------- DOM cleanup when app.js removes a control ----------------
 
-        const id = controlEl.dataset.id;
-        const startX = e.clientX;
-        const startY = e.clientY;
-        const scale = window.WiresModule ? window.WiresModule.getScale() : 1;
+App.events.addEventListener('control:remove', (event) => {
+    const control = event.detail;
+    control.el.querySelectorAll('[data-node-id]').forEach((node) => App.unregisterNode(node.dataset.nodeId));
+    control.el.remove();
+});
 
-        // Move the whole selection together if this control is part of one.
-        let movingIds;
-        const selectedControlIds = App.getSelection().filter(s => s.startsWith('c:')).map(s => s.slice(2));
-        if (selectedControlIds.includes(id)) {
-            movingIds = selectedControlIds;
-        } else {
-            movingIds = [id];
-        }
+// ---------------- Repositioning placed controls ----------------
 
-        const startPositions = movingIds.map(cid => {
-            const c = App.getControl(cid);
-            return { id: cid, x: c.x, y: c.y };
+/**
+ * Start dragging a control (or the whole selection if it is part of one).
+ * Called by main.js's mousedown router.
+ */
+export const beginControlDrag = (event, controlEl) => {
+    const id = controlEl.dataset.id;
+    const startX = event.clientX;
+    const startY = event.clientY;
+
+    // Move the whole selection together if this control is part of one.
+    const selectedIds = App.getSelection()
+        .filter((key) => key.startsWith('c:'))
+        .map((key) => key.slice(2));
+    const movingIds = selectedIds.includes(id) ? selectedIds : [id];
+
+    const starts = movingIds
+        .map((controlId) => App.getControl(controlId))
+        .filter(Boolean)
+        .map((control) => ({ id: control.id, x: control.x, y: control.y }));
+
+    let moved = false;
+
+    const onMove = (moveEvent) => {
+        const screenDx = moveEvent.clientX - startX;
+        const screenDy = moveEvent.clientY - startY;
+        if (!moved && Math.hypot(screenDx, screenDy) < DRAG_THRESHOLD_PX) return;
+        moved = true;
+
+        const zoom = App.getZoom();
+        starts.forEach((start) => {
+            const control = App.getControl(start.id);
+            if (!control) return;
+            control.x = clampToWorld(start.x + screenDx / zoom);
+            control.y = clampToWorld(start.y + screenDy / zoom);
+            control.el.style.left = `${control.x}px`;
+            control.el.style.top = `${control.y}px`;
+            App.emit('control:move', control);
         });
-        let moved = false;
+    };
 
-        function onMove(ev) {
-            const dx = (ev.clientX - startX) / scale;
-            const dy = (ev.clientY - startY) / scale;
-            if (Math.abs(dx) > 1 || Math.abs(dy) > 1) moved = true;
-            startPositions.forEach(p => {
-                const c = App.getControl(p.id);
-                if (!c) return;
-                const nx = Math.max(0, Math.round(p.x + dx));
-                const ny = Math.max(0, Math.round(p.y + dy));
-                c.el.style.left = nx + 'px';
-                c.el.style.top = ny + 'px';
-                c.x = nx;
-                c.y = ny;
-                App.emit('control:move', c);
-            });
-        }
-        function onUp() {
-            document.removeEventListener('mousemove', onMove);
-            document.removeEventListener('mouseup', onUp);
-        }
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
-    });
+    const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        if (moved) App.swallowNextClick();
+    };
 
-    window.CanvasModule = { placeControl, addGateInputNode, GATE_TYPES };
-})();
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+};

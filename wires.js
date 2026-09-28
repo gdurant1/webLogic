@@ -2,211 +2,260 @@
  * wires.js — Wire Management
  * ---------------------------------------------------------------------------
  * Per javascript.md §3 / htmlPromptForCSS.md §4b2:
- *   - A wire drag starts on mousedown over a .node-out (output nodes accept
- *     unlimited outgoing wires).
- *   - Input nodes accept at most one wire; drops on an occupied input node
- *     are rejected without touching the existing connection (and the
- *     rejected node gets a brief red .reject-flash).
- *   - While the drag is in progress, every not-yet-occupied .node-in gets
- *     a .drop-target highlight (see style.css); it's cleared the moment
- *     the drag ends, whether or not the drop succeeded.
- *   - On a valid drop: remove .pending from the wire, remove .unattached
- *     from the input node.
- *   - Each wire is drawn as a pair of stacked <path>s (a dark outline plus
- *     the actual colored wire on top) into the #wire-layer SVG that sits
- *     over #canvas in index.html.
+ *   - A wire drag starts on mousedown over a .node-out (main.js's router calls
+ *     beginWireDrag()). Output nodes accept unlimited outgoing wires.
+ *   - Input nodes accept at most one wire; a drop on an occupied input is
+ *     rejected (the node gets a brief red .reject-flash).
+ *   - While dragging, every not-yet-occupied .node-in gets .drop-target; it
+ *     is cleared the moment the drag ends.
+ *   - Connections are checked against the circuit gate limit (limits.js)
+ *     before the wire is created.
+ *   - Each wire = a dark outline <path> under the colored <path>, drawn into
+ *     the #wire-layer SVG inside the canvas world.
  *
- * Also owns the eraser tool (#btn-eraser in #canvas-controls), since
- * erasing a wire or control both end in the same "detach + clean up
- * .unattached" bookkeeping this module already needs for normal deletion.
+ * Performance: wire endpoints are computed from STORED coordinates —
+ * control.x / control.y plus each node's cached offset inside its control —
+ * so dragging never reads layout per wire. Offsets are measured once
+ * (placement, input-count change, flip, fonts loaded). Moves mark controls
+ * dirty and one requestAnimationFrame updates only the wires attached to
+ * them.
+ *
+ * Wire direction: outputs leave to the right and inputs enter from the left,
+ * except a node with data-side="..." (the light bulb's input is "bottom").
+ * flipH / flipV mirror those sides.
  */
-(function () {
-    'use strict';
+import * as App from './app.js';
+import * as Limits from './limits.js';
 
-    const canvas = document.getElementById('canvas');
-    const svg = document.getElementById('wire-layer');
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const svg = document.getElementById('wire-layer');
 
-    // ---------------- Coordinate helpers (zoom + scroll aware) ----------------
-    function getScale() {
-        const t = getComputedStyle(canvas).transform;
-        if (!t || t === 'none') return 1;
-        const match = t.match(/matrix\(([^,]+),/);
-        return match ? (parseFloat(match[1]) || 1) : 1;
-    }
+const DIRECTIONS = {
+    left: [-1, 0],
+    right: [1, 0],
+    top: [0, -1],
+    bottom: [0, 1],
+};
 
-    function nodeCenter(nodeEl) {
-        const nodeRect = nodeEl.getBoundingClientRect();
-        const canvasRect = canvas.getBoundingClientRect();
-        const scale = getScale();
-        return {
-            x: (nodeRect.left + nodeRect.width / 2 - canvasRect.left) / scale + canvas.scrollLeft,
-            y: (nodeRect.top + nodeRect.height / 2 - canvasRect.top) / scale + canvas.scrollTop,
-        };
-    }
+// ---------------- Cached node geometry ----------------
 
-    function pathD(p1, p2) {
-        const dx = Math.max(40, Math.abs(p2.x - p1.x) / 2);
-        return 'M ' + p1.x + ' ' + p1.y +
-            ' C ' + (p1.x + dx) + ' ' + p1.y + ', ' + (p2.x - dx) + ' ' + p2.y + ', ' + p2.x + ' ' + p2.y;
-    }
+const nodeOffsets = new Map(); // nodeId -> { x, y } node center inside its control (unscaled px)
 
-    // ---------------- Creating a permanent wire ----------------
-    function createWire(fromNodeId, toNodeId) {
-        const wireId = App.genWireId();
-        // Two stacked paths: a thicker dark outline underneath (keeps the
-        // wire visible against the canvas even when its signal color is
-        // white/low) and the actual colored wire on top — see the
-        // reference screenshot and style.css's "Wires" section.
-        const outlineEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        outlineEl.setAttribute('class', 'wire-outline');
-        svg.appendChild(outlineEl);
-
-        const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        pathEl.setAttribute('class', 'wire');
-        svg.appendChild(pathEl);
-
-        pathEl.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const key = 'w:' + wireId;
-            if (e.ctrlKey || e.metaKey) {
-                if (App.isSelected(key)) App.removeFromSelection(key);
-                else App.addToSelection(key);
-            } else {
-                App.setSelection([key]);
-            }
+/** Measure every node of one control. Call after anything that moves nodes. */
+export const measureControl = (control) => {
+    const zoom = App.getZoom();
+    const controlRect = control.el.getBoundingClientRect();
+    control.el.querySelectorAll('[data-node-id]').forEach((nodeEl) => {
+        const rect = nodeEl.getBoundingClientRect();
+        nodeOffsets.set(nodeEl.dataset.nodeId, {
+            x: (rect.left + rect.width / 2 - controlRect.left) / zoom,
+            y: (rect.top + rect.height / 2 - controlRect.top) / zoom,
         });
+    });
+};
 
-        const wire = { id: wireId, fromNodeId, toNodeId, pathEl, outlineEl, signal: undefined };
-        App.addWire(wire);
-        updateWirePath(wire);
+const measureAll = () => {
+    App.allControls().forEach(measureControl);
+    App.allWires().forEach(updateWirePath);
+};
 
-        const toInfo = App.getNode(toNodeId);
-        if (toInfo) toInfo.el.classList.remove('unattached');
-        return wire;
+const flipSide = (side, control) => {
+    if (control.flipH && side === 'left') return 'right';
+    if (control.flipH && side === 'right') return 'left';
+    if (control.flipV && side === 'top') return 'bottom';
+    if (control.flipV && side === 'bottom') return 'top';
+    return side;
+};
+
+/** World-space center of a node plus the side its wire leaves/enters from. */
+const nodePoint = (nodeId) => {
+    const info = App.getNode(nodeId);
+    if (!info) return null;
+    const control = App.getControl(info.controlId);
+    if (!control) return null;
+    if (!nodeOffsets.has(nodeId)) measureControl(control);
+    const offset = nodeOffsets.get(nodeId);
+    if (!offset) return null;
+    const baseSide = info.el.dataset.side || (info.kind === 'in' ? 'left' : 'right');
+    return { x: control.x + offset.x, y: control.y + offset.y, side: flipSide(baseSide, control) };
+};
+
+// ---------------- Path geometry ----------------
+
+const buildPath = (from, fromSide, to, toSide) => {
+    const distance = Math.hypot(to.x - from.x, to.y - from.y);
+    const handle = Math.max(40, Math.min(distance / 2, 240));
+    const [ax, ay] = DIRECTIONS[fromSide];
+    const [bx, by] = DIRECTIONS[toSide];
+    return `M ${from.x} ${from.y} C ${from.x + ax * handle} ${from.y + ay * handle}, ${to.x + bx * handle} ${to.y + by * handle}, ${to.x} ${to.y}`;
+};
+
+const makePath = (className) => {
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('class', className);
+    svg.appendChild(path);
+    return path;
+};
+
+function updateWirePath(wire) {
+    const from = nodePoint(wire.fromNodeId);
+    const to = nodePoint(wire.toNodeId);
+    if (!from || !to) return;
+    const d = buildPath(from, from.side, to, to.side);
+    wire.pathEl.setAttribute('d', d);
+    wire.outlineEl.setAttribute('d', d);
+}
+
+// ---------------- requestAnimationFrame batching ----------------
+
+const dirtyControlIds = new Set();
+let frameQueued = false;
+
+const flushWireUpdates = () => {
+    frameQueued = false;
+    const dirtyWires = new Set();
+    dirtyControlIds.forEach((id) => App.getWiresForControl(id).forEach((wire) => dirtyWires.add(wire)));
+    dirtyControlIds.clear();
+    dirtyWires.forEach(updateWirePath);
+};
+
+const queueWireUpdate = (controlId) => {
+    dirtyControlIds.add(controlId);
+    if (!frameQueued) {
+        frameQueued = true;
+        requestAnimationFrame(flushWireUpdates);
     }
+};
 
-    function updateWirePath(wire) {
-        const from = App.getNode(wire.fromNodeId);
-        const to = App.getNode(wire.toNodeId);
-        if (!from || !to) return;
-        const d = pathD(nodeCenter(from.el), nodeCenter(to.el));
-        wire.pathEl.setAttribute('d', d);
-        if (wire.outlineEl) wire.outlineEl.setAttribute('d', d);
-    }
+// ---------------- Keeping wires attached ----------------
 
-    function updateAllWirePaths() {
-        App.allWires().forEach(updateWirePath);
-    }
+App.events.addEventListener('control:placed', (event) => measureControl(event.detail));
 
-    // Keep wires glued to their nodes across moves, zoom, pan/scroll, resize.
-    App.events.addEventListener('control:move', updateAllWirePaths);
-    App.events.addEventListener('control:placed', updateAllWirePaths);
-    App.events.addEventListener('control:inputcount', updateAllWirePaths);
-    canvas.addEventListener('scroll', updateAllWirePaths);
-    window.addEventListener('resize', updateAllWirePaths);
+App.events.addEventListener('control:move', (event) => queueWireUpdate(event.detail.id));
 
-    App.events.addEventListener('wire:remove', (e) => {
-        const wire = e.detail;
-        wire.pathEl.remove();
-        if (wire.outlineEl) wire.outlineEl.remove();
-        const to = App.getNode(wire.toNodeId);
-        // An input node with no wire left on it goes back to its idle,
-        // "needs a connection" look.
-        if (to && App.getWiresForNode(wire.toNodeId).length === 0) {
-            to.el.classList.add('unattached');
+['control:inputcount', 'control:flip'].forEach((name) => {
+    App.events.addEventListener(name, (event) => {
+        measureControl(event.detail);
+        queueWireUpdate(event.detail.id);
+    });
+});
+
+App.events.addEventListener('control:remove', (event) => {
+    const prefix = `${event.detail.id}-`;
+    [...nodeOffsets.keys()].forEach((key) => {
+        if (key.startsWith(prefix)) nodeOffsets.delete(key);
+    });
+});
+
+App.events.addEventListener('wire:remove', (event) => {
+    const wire = event.detail;
+    wire.pathEl.remove();
+    wire.outlineEl.remove();
+    // An input node with no wire left goes back to its idle look.
+    const to = App.getNode(wire.toNodeId);
+    if (to && !App.isNodeOccupied(wire.toNodeId)) to.el.classList.add('unattached');
+});
+
+// Node sizes can shift once web fonts / layout settle, so measure again.
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(measureAll);
+window.addEventListener('load', measureAll);
+
+// ---------------- Creating a permanent wire ----------------
+
+export const createWire = (fromNodeId, toNodeId) => {
+    const wireId = App.genWireId();
+    // Two stacked paths: a thicker dark outline underneath keeps the wire
+    // visible even when its signal color is white/low.
+    const outlineEl = makePath('wire-outline');
+    const pathEl = makePath('wire');
+
+    pathEl.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const key = `w:${wireId}`;
+        if (event.ctrlKey || event.metaKey) {
+            if (App.isSelected(key)) App.removeFromSelection(key);
+            else App.addToSelection(key);
+        } else {
+            App.setSelection([key]);
         }
     });
 
-    // ---------------- Dragging a new wire out of an output node ----------------
-    let eraserActive = false;
+    const wire = { id: wireId, fromNodeId, toNodeId, pathEl, outlineEl, signal: undefined };
+    App.addWire(wire);
+    updateWirePath(wire);
 
-    // While a wire is being dragged out, every input node that doesn't
-    // already have a wire attached gets a live "drop here" highlight —
-    // and only for the duration of that one drag.
-    function markDropTargets(on) {
-        document.querySelectorAll('.node-in').forEach(n => {
-            const nodeId = n.dataset.nodeId;
-            if (on && nodeId && !App.isNodeOccupied(nodeId)) {
-                n.classList.add('drop-target');
-            } else {
-                n.classList.remove('drop-target');
-            }
-        });
-    }
+    const toInfo = App.getNode(toNodeId);
+    if (toInfo) toInfo.el.classList.remove('unattached');
+    return wire;
+};
 
-    function flashReject(nodeEl) {
-        if (!nodeEl) return;
-        nodeEl.classList.add('reject-flash');
-        setTimeout(() => nodeEl.classList.remove('reject-flash'), 300);
-    }
+// ---------------- Dragging a new wire out of an output node ----------------
 
-    canvas.addEventListener('mousedown', (e) => {
-        if (eraserActive) return;
-        const node = e.target.closest('.node-out');
-        if (!node) return;
-        e.stopPropagation();
-        const fromNodeId = node.dataset.nodeId;
-        if (!fromNodeId) return;
-
-        const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        pathEl.setAttribute('class', 'wire pending');
-        svg.appendChild(pathEl);
-        markDropTargets(true);
-
-        function onMove(ev) {
-            const rect = canvas.getBoundingClientRect();
-            const scale = getScale();
-            const p1 = nodeCenter(node);
-            const p2 = {
-                x: (ev.clientX - rect.left) / scale + canvas.scrollLeft,
-                y: (ev.clientY - rect.top) / scale + canvas.scrollTop,
-            };
-            pathEl.setAttribute('d', pathD(p1, p2));
-        }
-
-        function onUp(ev) {
-            document.removeEventListener('mousemove', onMove);
-            document.removeEventListener('mouseup', onUp);
-            const target = document.elementFromPoint(ev.clientX, ev.clientY);
-            const targetNode = target && target.closest ? target.closest('.node-in') : null;
-            pathEl.remove();
-            markDropTargets(false);
-            if (targetNode) {
-                const toNodeId = targetNode.dataset.nodeId;
-                if (toNodeId && toNodeId !== fromNodeId && !App.isNodeOccupied(toNodeId)) {
-                    createWire(fromNodeId, toNodeId);
-                } else if (toNodeId) {
-                    flashReject(targetNode); // e.g. that input already has a wire
-                }
-            }
-        }
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
+const markDropTargets = (on) => {
+    document.querySelectorAll('.node-in').forEach((node) => {
+        const nodeId = node.dataset.nodeId;
+        node.classList.toggle('drop-target', Boolean(on && nodeId && !App.isNodeOccupied(nodeId)));
     });
+};
 
-    // ---------------- Eraser tool ----------------
-    const eraserBtn = document.getElementById('btn-eraser');
-    if (eraserBtn) {
-        eraserBtn.addEventListener('click', () => {
-            eraserActive = !eraserActive;
-            eraserBtn.classList.toggle('selected', eraserActive);
-        });
+const flashReject = (nodeEl) => {
+    nodeEl.classList.add('reject-flash');
+    setTimeout(() => nodeEl.classList.remove('reject-flash'), 300);
+};
+
+const attemptConnect = async (fromNodeId, toNodeId) => {
+    const check = Limits.checkConnection(fromNodeId, toNodeId);
+    if (check.needsApproval) {
+        const approved = await Limits.requestCircuitApproval(check.gateCount, check.controlIds);
+        if (!approved) return;
     }
+    // The dialog is modal, but re-check in case anything changed meanwhile.
+    if (!App.getNode(fromNodeId) || !App.getNode(toNodeId) || App.isNodeOccupied(toNodeId)) return;
+    createWire(fromNodeId, toNodeId);
+};
 
-    canvas.addEventListener('click', (e) => {
-        if (!eraserActive) return;
-        const wireEl = e.target.closest('.wire');
-        if (wireEl) {
-            const wire = App.allWires().find(w => w.pathEl === wireEl);
-            if (wire) App.removeWire(wire.id);
-            return;
-        }
-        const controlEl = e.target.closest('.control');
-        if (controlEl) App.removeControl(controlEl.dataset.id);
-    });
+/** Called by main.js's mousedown router when the press lands on a .node-out. */
+export const beginWireDrag = (event, nodeEl) => {
+    const fromNodeId = nodeEl.dataset.nodeId;
+    if (!fromNodeId) return;
+    const start = nodePoint(fromNodeId);
+    if (!start) return;
 
-    window.WiresModule = {
-        createWire, updateAllWirePaths, getScale, nodeCenter,
-        isEraserActive: () => eraserActive,
+    event.preventDefault(); // no text selection / native drag while wiring
+
+    const pending = makePath('wire pending');
+    pending.style.pointerEvents = 'none'; // never let the preview block the drop hit-test
+    markDropTargets(true);
+
+    const drawTo = (clientX, clientY) => {
+        const point = App.clientToWorld(clientX, clientY);
+        pending.setAttribute('d', buildPath(start, start.side, point, 'left'));
     };
-})();
+    drawTo(event.clientX, event.clientY);
+
+    const onMove = (moveEvent) => drawTo(moveEvent.clientX, moveEvent.clientY);
+
+    const onUp = (upEvent) => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        pending.remove();
+        markDropTargets(false);
+
+        // elementsFromPoint (plural) so a wire lying across a node cannot hide it.
+        const targetNode = document
+            .elementsFromPoint(upEvent.clientX, upEvent.clientY)
+            .find((el) => el.classList && el.classList.contains('node-in'));
+        if (!targetNode) return;
+
+        const toNodeId = targetNode.dataset.nodeId;
+        if (!toNodeId) return;
+        if (toNodeId !== fromNodeId && !App.isNodeOccupied(toNodeId)) {
+            attemptConnect(fromNodeId, toNodeId);
+        } else {
+            flashReject(targetNode); // e.g. that input already has a wire
+        }
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+};

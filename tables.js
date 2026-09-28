@@ -1,231 +1,276 @@
 /**
  * tables.js — Truth Table Generator
  * ---------------------------------------------------------------------------
- * Per javascript.md §7:
- *   - Every logic gate placed on the canvas gets its own reference truth
- *     table in #truth-tables-list (built from GATE_FUNCS — this table is
- *     the gate's abstract behavior, independent of what's actually wired to
- *     it).
- *   - Gates that are wired together into a multi-part circuit are grouped
- *     (via a union-find over the wire graph) under one cloned
- *     #logic-circuit-template: a master table showing every combination of
- *     the group's toggle-switch inputs against its sink outputs (light
- *     bulbs / 4-bit digits / any dangling gate output), plus each member
+ * Per javascript.md §6:
+ *   - Every logic gate not wired into a bigger circuit gets its own reference
+ *     truth table in #truth-tables-list (built from GATE_FUNCS — the gate's
+ *     abstract behavior, independent of what is wired to it).
+ *   - Gates wired together are grouped (App.getComponents) under one cloned
+ *     #logic-circuit-template: a master table of every combination of the
+ *     group's toggle-switch inputs against its outputs (light bulbs, 4-bit
+ *     digits, and any gate output that feeds nothing), plus each member
  *     gate's own table nested inside.
- *   - Clicking a master-table row jumps the real canvas switches to that
- *     row's combination and re-evaluates (per javascript.md's "bind click
- *     handlers ... to manually jump simulation playback").
+ *   - Clicking a master-table row sets the real canvas switches to that
+ *     row's combination and re-evaluates.
+ *
+ * Input cap (limits.js): a master table has 2^n rows for n switches. Up to
+ * TABLE_INPUT_LIMIT it is built automatically. Above that a message replaces
+ * it, with a "Show anyway" button (per circuit, behind a warning dialog);
+ * above TABLE_INPUT_HARD_LIMIT it is never built.
+ *
+ * Rebuilds are coalesced (one per burst of events) and timed for the speed
+ * guard in limits.js.
  */
-(function () {
-    'use strict';
+import * as App from './app.js';
+import * as Logic from './logic.js';
+import * as Limits from './limits.js';
 
-    const listEl = document.getElementById('truth-tables-list');
-    const circuitTpl = document.getElementById('logic-circuit-template');
-    const GATE_TYPES = ['buffer', 'not', 'and', 'nand', 'or', 'nor', 'xor', 'xnor', 'tri-state'];
+const listEl = document.getElementById('truth-tables-list');
+const circuitTemplate = document.getElementById('logic-circuit-template');
+const EMPTY_CELL = '\u2014';
 
-    // ---------------- Individual gate tables ----------------
-    function truthTableRows(type, inputCount) {
-        const fn = window.LogicModule.GATE_FUNCS[type];
-        const rows = [];
-        const total = Math.pow(2, inputCount);
-        for (let i = 0; i < total; i++) {
+const cell = (value) => (value === undefined ? EMPTY_CELL : String(value));
+
+// ---------------- Individual gate tables ----------------
+
+const truthTableRows = (type, inputCount) => {
+    const fn = Logic.GATE_FUNCS[type];
+    const rows = [];
+    for (let i = 0; i < 2 ** inputCount; i++) {
+        const ins = [];
+        for (let bit = inputCount - 1; bit >= 0; bit--) ins.push(Math.floor(i / 2 ** bit) % 2);
+        rows.push({ ins, out: fn(ins) });
+    }
+    return rows;
+};
+
+const buildGateTable = (control) => {
+    const table = document.createElement('table');
+    const caption = document.createElement('caption');
+    caption.textContent = control.type.toUpperCase();
+    table.appendChild(caption);
+
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    for (let i = 0; i < control.inputCount; i++) {
+        const th = document.createElement('th');
+        th.textContent = `In${i + 1}`;
+        headRow.appendChild(th);
+    }
+    const outTh = document.createElement('th');
+    outTh.textContent = 'Out';
+    headRow.appendChild(outTh);
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    truthTableRows(control.type, control.inputCount).forEach((row) => {
+        const tr = document.createElement('tr');
+        [...row.ins, row.out].forEach((value) => {
+            const td = document.createElement('td');
+            td.textContent = cell(value);
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    return table;
+};
+
+// ---------------- Circuit tables ----------------
+
+const hasOutgoingWire = (control) => App.getWiresFromNode(`${control.id}-out`).length > 0;
+
+/**
+ * Pure (non-mutating) evaluation of one connected group for a hypothetical
+ * assignment of its toggle switches, so the master table can be filled in
+ * without disturbing the real canvas state.
+ */
+const evaluateComponent = (components, switchValues) => {
+    const values = new Map();
+    components.forEach((control) => {
+        const key = `${control.id}-out`;
+        if (control.type === 'toggle-switch') values.set(key, switchValues.get(control.id));
+        else if (control.type === 'high-constant') values.set(key, 1);
+        else if (control.type === 'low-constant') values.set(key, 0);
+        else if (control.type === 'push-button') values.set(key, 0); // clocks stay unknown (undefined), as before
+    });
+
+    const gates = components.filter((control) => Logic.GATE_FUNCS[control.type]);
+    for (let pass = 0; pass < gates.length + 2; pass++) {
+        let changed = false;
+        gates.forEach((gate) => {
             const ins = [];
-            for (let b = inputCount - 1; b >= 0; b--) ins.push((i >> b) & 1);
-            rows.push({ ins, out: fn(ins) });
-        }
-        return rows;
-    }
-
-    function buildGateTable(control) {
-        const table = document.createElement('table');
-        const caption = document.createElement('caption');
-        caption.textContent = control.type.toUpperCase();
-        table.appendChild(caption);
-
-        const thead = document.createElement('thead');
-        const headRow = document.createElement('tr');
-        for (let i = 0; i < control.inputCount; i++) {
-            const th = document.createElement('th');
-            th.textContent = 'In' + (i + 1);
-            headRow.appendChild(th);
-        }
-        const outTh = document.createElement('th');
-        outTh.textContent = 'Out';
-        headRow.appendChild(outTh);
-        thead.appendChild(headRow);
-        table.appendChild(thead);
-
-        const tbody = document.createElement('tbody');
-        truthTableRows(control.type, control.inputCount).forEach(row => {
-            const tr = document.createElement('tr');
-            row.ins.forEach(v => {
-                const td = document.createElement('td');
-                td.textContent = String(v);
-                tr.appendChild(td);
-            });
-            const outTd = document.createElement('td');
-            outTd.textContent = row.out === undefined ? '\u2014' : String(row.out);
-            tr.appendChild(outTd);
-            tbody.appendChild(tr);
-        });
-        table.appendChild(tbody);
-        return table;
-    }
-
-    // ---------------- Connected-circuit grouping (union-find over wires) ----------------
-    function findComponents() {
-        const controls = App.allControls();
-        const parent = new Map();
-        controls.forEach(c => parent.set(c.id, c.id));
-        function find(x) { while (parent.get(x) !== x) x = parent.get(x); return x; }
-        function union(a, b) { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb); }
-
-        App.allWires().forEach(w => {
-            const from = App.getNode(w.fromNodeId);
-            const to = App.getNode(w.toNodeId);
-            if (from && to) union(from.controlId, to.controlId);
-        });
-
-        const groups = new Map();
-        controls.forEach(c => {
-            const root = find(c.id);
-            if (!groups.has(root)) groups.set(root, []);
-            groups.get(root).push(c);
-        });
-        return Array.from(groups.values()).filter(g => g.length > 1);
-    }
-
-    function hasOutgoingWire(control) {
-        return App.allWires().some(w => w.fromNodeId === control.id + '-out');
-    }
-
-    /** Pure (non-mutating) evaluation of one connected group for a
-     * hypothetical assignment of its toggle switches — used to fill in the
-     * master table without disturbing the actual canvas state. */
-    function evaluateComponent(components, switchValues) {
-        const values = new Map();
-        components.forEach(c => {
-            if (c.type === 'toggle-switch') values.set(c.id + '-out', switchValues.get(c.id));
-            else if (c.type === 'high-constant') values.set(c.id + '-out', 1);
-            else if (c.type === 'low-constant') values.set(c.id + '-out', 0);
-            else if (c.type === 'push-button') values.set(c.id + '-out', 0);
-        });
-        for (let pass = 0; pass < components.length + 2; pass++) {
-            components.forEach(c => {
-                const fn = window.LogicModule.GATE_FUNCS[c.type];
-                if (!fn) return;
-                const ins = [];
-                for (let i = 0; i < c.inputCount; i++) {
-                    const nodeId = c.id + '-in-' + i;
-                    const wire = App.allWires().find(w => w.toNodeId === nodeId);
-                    ins.push(wire && values.has(wire.fromNodeId) ? values.get(wire.fromNodeId) : undefined);
-                }
-                values.set(c.id + '-out', fn(ins));
-            });
-        }
-        return values;
-    }
-
-    function buildCircuitTable(components) {
-        const switches = components.filter(c => c.type === 'toggle-switch');
-        const sinks = components.filter(c =>
-            c.type === 'light-bulb' || c.type === 'four-bit-digit' ||
-            (window.LogicModule.GATE_FUNCS[c.type] && !hasOutgoingWire(c))
-        );
-
-        const table = document.createElement('table');
-        const thead = document.createElement('thead');
-        const headRow = document.createElement('tr');
-        switches.forEach((s, i) => {
-            const th = document.createElement('th');
-            th.textContent = 'S' + (i + 1);
-            headRow.appendChild(th);
-        });
-        sinks.forEach(s => {
-            const th = document.createElement('th');
-            th.textContent = s.type === 'light-bulb' ? 'Bulb' : (s.type === 'four-bit-digit' ? 'Digit' : s.type.toUpperCase());
-            headRow.appendChild(th);
-        });
-        thead.appendChild(headRow);
-        table.appendChild(thead);
-
-        const tbody = document.createElement('tbody');
-        const total = Math.max(1, Math.pow(2, switches.length));
-        for (let i = 0; i < total; i++) {
-            const assignment = new Map();
-            switches.forEach((s, b) => assignment.set(s.id, (i >> b) & 1));
-            const values = evaluateComponent(components, assignment);
-
-            const tr = document.createElement('tr');
-            switches.forEach(s => {
-                const td = document.createElement('td');
-                td.textContent = String(assignment.get(s.id));
-                tr.appendChild(td);
-            });
-            sinks.forEach(s => {
-                const td = document.createElement('td');
-                if (s.type === 'four-bit-digit') {
-                    let n = 0;
-                    for (let b = 0; b < 4; b++) {
-                        const wire = App.allWires().find(w => w.toNodeId === s.id + '-in-' + b);
-                        const v = wire && values.has(wire.fromNodeId) ? values.get(wire.fromNodeId) : 0;
-                        if (v === 1) n |= (1 << (3 - b));
-                    }
-                    td.textContent = String(n);
-                } else if (s.type === 'light-bulb') {
-                    const wire = App.allWires().find(w => w.toNodeId === s.id + '-in-0');
-                    const v = wire && values.has(wire.fromNodeId) ? values.get(wire.fromNodeId) : undefined;
-                    td.textContent = v === undefined ? '\u2014' : String(v);
-                } else {
-                    const v = values.get(s.id + '-out');
-                    td.textContent = v === undefined ? '\u2014' : String(v);
-                }
-                tr.appendChild(td);
-            });
-
-            tr.addEventListener('click', () => {
-                switches.forEach(s => {
-                    const cb = s.el.querySelector('.switch-input');
-                    if (cb) cb.checked = !!assignment.get(s.id);
-                });
-                window.LogicModule.evaluate();
-            });
-
-            tbody.appendChild(tr);
-        }
-        table.appendChild(tbody);
-        return table;
-    }
-
-    // ---------------- Rebuild the whole panel ----------------
-    function rebuild() {
-        listEl.innerHTML = '';
-        const components = findComponents();
-        const groupedIds = new Set();
-        components.forEach(g => g.forEach(c => groupedIds.add(c.id)));
-
-        App.allControls().forEach(c => {
-            if (GATE_TYPES.includes(c.type) && !groupedIds.has(c.id)) {
-                listEl.appendChild(buildGateTable(c));
+            for (let i = 0; i < gate.inputCount; i++) {
+                const wire = App.getWireInto(`${gate.id}-in-${i}`);
+                ins.push(wire && values.has(wire.fromNodeId) ? values.get(wire.fromNodeId) : undefined);
+            }
+            const key = `${gate.id}-out`;
+            const out = Logic.GATE_FUNCS[gate.type](ins);
+            if (!values.has(key) || values.get(key) !== out) {
+                values.set(key, out);
+                changed = true;
             }
         });
+        if (!changed) break;
+    }
+    return values;
+};
 
-        components.forEach(group => {
-            const frag = circuitTpl.content.cloneNode(true);
-            const details = frag.querySelector('.logic-circuit');
-            const body = frag.querySelector('.logic-circuit-body');
-            details.open = true;
-            body.appendChild(buildCircuitTable(group));
-            group.filter(c => GATE_TYPES.includes(c.type)).forEach(c => body.appendChild(buildGateTable(c)));
-            listEl.appendChild(frag);
+const sinkValue = (sink, values) => {
+    if (sink.type === 'four-bit-digit') {
+        let digit = 0;
+        for (let bit = 0; bit < 4; bit++) {
+            const wire = App.getWireInto(`${sink.id}-in-${bit}`);
+            if (wire && values.get(wire.fromNodeId) === 1) digit += 2 ** (3 - bit);
+        }
+        return digit;
+    }
+    if (sink.type === 'light-bulb') {
+        const wire = App.getWireInto(`${sink.id}-in-0`);
+        return wire && values.has(wire.fromNodeId) ? values.get(wire.fromNodeId) : undefined;
+    }
+    return values.get(`${sink.id}-out`);
+};
+
+const sinkLabel = (sink) => {
+    if (sink.type === 'light-bulb') return 'Bulb';
+    if (sink.type === 'four-bit-digit') return 'Digit';
+    return sink.type.toUpperCase();
+};
+
+const buildCircuitTable = (components) => {
+    const switches = components.filter((control) => control.type === 'toggle-switch');
+    const sinks = components.filter((control) =>
+        control.type === 'light-bulb' || control.type === 'four-bit-digit' ||
+        (Logic.GATE_FUNCS[control.type] && !hasOutgoingWire(control)));
+
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    switches.forEach((_, i) => {
+        const th = document.createElement('th');
+        th.textContent = `S${i + 1}`;
+        headRow.appendChild(th);
+    });
+    sinks.forEach((sink) => {
+        const th = document.createElement('th');
+        th.textContent = sinkLabel(sink);
+        headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    const total = Math.max(1, 2 ** switches.length);
+    for (let i = 0; i < total; i++) {
+        const assignment = new Map();
+        switches.forEach((control, bit) => assignment.set(control.id, Math.floor(i / 2 ** bit) % 2));
+        const values = evaluateComponent(components, assignment);
+
+        const tr = document.createElement('tr');
+        switches.forEach((control) => {
+            const td = document.createElement('td');
+            td.textContent = String(assignment.get(control.id));
+            tr.appendChild(td);
         });
+        sinks.forEach((sink) => {
+            const td = document.createElement('td');
+            td.textContent = cell(sinkValue(sink, values));
+            tr.appendChild(td);
+        });
+
+        tr.addEventListener('click', () => {
+            switches.forEach((control) => {
+                const checkbox = control.el.querySelector('.switch-input');
+                if (checkbox) checkbox.checked = assignment.get(control.id) === 1;
+            });
+            Logic.evaluate();
+        });
+        tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    return table;
+};
+
+/** Message shown in place of a master table that is over the input cap. */
+const buildCapMessage = (inputCount, controlIds) => {
+    const box = document.createElement('div');
+    box.className = 'table-cap-message';
+
+    const text = document.createElement('p');
+    if (inputCount > Limits.TABLE_INPUT_HARD_LIMIT) {
+        text.textContent =
+            `Truth table hidden: ${inputCount} inputs would need ${(2 ** inputCount).toLocaleString()} rows, ` +
+            `more than the ${Limits.TABLE_INPUT_HARD_LIMIT}-input maximum. Split the circuit to see its table.`;
+        box.appendChild(text);
+        return box;
     }
 
-    App.events.addEventListener('control:add', rebuild);
-    App.events.addEventListener('control:remove', rebuild);
-    App.events.addEventListener('control:inputcount', rebuild);
-    App.events.addEventListener('wire:add', rebuild);
-    App.events.addEventListener('wire:remove', rebuild);
+    text.textContent =
+        `Truth table hidden: ${inputCount} inputs need ${(2 ** inputCount).toLocaleString()} rows ` +
+        `(limit ${Limits.TABLE_INPUT_LIMIT} inputs).`;
+    box.appendChild(text);
 
-    window.TablesModule = { rebuild };
-})();
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = 'Show anyway';
+    button.addEventListener('click', async () => {
+        const approved = await Limits.requestTableApproval(inputCount, controlIds);
+        if (approved) rebuild();
+    });
+    box.appendChild(button);
+    return box;
+};
+
+// ---------------- Rebuild the whole panel ----------------
+
+export const rebuild = () => {
+    const started = performance.now();
+    listEl.innerHTML = '';
+
+    const components = App.getComponents();
+    const groupedIds = new Set();
+    components.forEach((group) => group.forEach((control) => groupedIds.add(control.id)));
+
+    App.allControls().forEach((control) => {
+        if (App.GATE_TYPES.has(control.type) && !groupedIds.has(control.id)) {
+            listEl.appendChild(buildGateTable(control));
+        }
+    });
+
+    components.forEach((group) => {
+        const fragment = circuitTemplate.content.cloneNode(true);
+        const details = fragment.querySelector('.logic-circuit');
+        const body = fragment.querySelector('.logic-circuit-body');
+        details.open = true;
+
+        const controlIds = group.map((control) => control.id);
+        const inputCount = group.filter((control) => control.type === 'toggle-switch').length;
+        const overCap = inputCount > Limits.TABLE_INPUT_LIMIT;
+        const allowed = inputCount <= Limits.TABLE_INPUT_HARD_LIMIT && (!overCap || Limits.isTableApproved(controlIds));
+
+        body.appendChild(allowed ? buildCircuitTable(group) : buildCapMessage(inputCount, controlIds));
+        group
+            .filter((control) => App.GATE_TYPES.has(control.type))
+            .forEach((control) => body.appendChild(buildGateTable(control)));
+        listEl.appendChild(fragment);
+    });
+
+    Limits.recordRebuild(performance.now() - started);
+};
+
+/** Coalesce bursts of events (e.g. Clear All) into one rebuild. */
+let rebuildPending = false;
+export const scheduleRebuild = () => {
+    if (rebuildPending) return;
+    rebuildPending = true;
+    queueMicrotask(() => {
+        rebuildPending = false;
+        rebuild();
+    });
+};
+
+['control:add', 'control:remove', 'control:inputcount', 'wire:add', 'wire:remove'].forEach((name) => {
+    App.events.addEventListener(name, scheduleRebuild);
+});

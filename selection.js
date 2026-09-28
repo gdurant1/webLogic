@@ -3,204 +3,217 @@
  * ---------------------------------------------------------------------------
  * Per javascript.md §4:
  *   - Click on a .control sets the single active selection and toggles
- *     .selected (style.css already defines the look — see colorScheme.md's
- *     --color-selected). Ctrl/Cmd-click adds/removes from the selection.
- *   - #btn-multiselect arms a rubber-band drag over empty canvas space that
- *     selects every intersecting .control.
- *   - Delete removes selected controls/wires (and, via app.js, any wires
- *     attached to a removed control).
- *   - Cut/copy/paste, flip-h/flip-v, and group are implemented here.
+ *     .selected. Ctrl/Cmd-click adds/removes from the selection.
+ *   - #btn-multiselect arms a rubber-band: drag over empty canvas to select
+ *     every intersecting control (hold Ctrl/Cmd to ADD to the selection).
+ *     main.js's mousedown router calls beginRubberBand().
+ *   - Delete / Backspace and #btn-delete remove selected controls/wires (and,
+ *     via app.js, any wires attached to a removed control).
+ *   - Cut/copy/paste, flip-h/flip-v and group are implemented here.
  *
  * Grouping is deliberately lightweight: a shared control.groupId makes a
- * later click on any member of the group re-select the whole group, and
- * canvas.js's drag-repositioning already moves the entire current selection
- * together — so "group" doesn't need its own drag logic.
+ * later click on any member re-select the whole group, and canvas.js already
+ * moves the entire current selection together when one member is dragged.
  */
-(function () {
-    'use strict';
+import * as App from './app.js';
+import * as Canvas from './canvas.js';
 
-    const canvas = document.getElementById('canvas');
-    const btnMultiselect = document.getElementById('btn-multiselect');
+const viewport = document.getElementById('canvas');
+const world = document.getElementById('canvas-world');
+const multiselectButton = document.getElementById('btn-multiselect');
 
-    let multiSelectMode = false;
-    let clipboard = [];
-    let nextGroupId = 1;
+let multiSelectMode = false;
+let clipboard = [];
+let nextGroupId = 1;
 
-    function keyC(id) { return 'c:' + id; }
-    function keyW(id) { return 'w:' + id; }
+const controlKey = (id) => `c:${id}`;
 
-    // ---------------- Visual sync ----------------
-    function applyVisualSelection() {
-        document.querySelectorAll('.control.selected, .wire.selected').forEach(el => el.classList.remove('selected'));
-        App.getSelection().forEach(key => {
-            if (key.startsWith('c:')) {
-                const c = App.getControl(key.slice(2));
-                if (c) c.el.classList.add('selected');
-            } else if (key.startsWith('w:')) {
-                const w = App.getWire(key.slice(2));
-                if (w) w.pathEl.classList.add('selected');
-            }
-        });
-    }
-    App.events.addEventListener('selection:change', applyVisualSelection);
+export const isMultiSelectMode = () => multiSelectMode;
 
-    // ---------------- Click-to-select ----------------
-    function selectControl(id, additive) {
-        const c = App.getControl(id);
-        const idsToSelect = (c && c.groupId)
-            ? App.allControls().filter(x => x.groupId === c.groupId).map(x => x.id)
-            : [id];
+// ---------------- Visual sync ----------------
 
-        if (additive) {
-            idsToSelect.forEach(cid => {
-                const key = keyC(cid);
-                if (App.isSelected(key)) App.removeFromSelection(key);
-                else App.addToSelection(key);
-            });
-        } else {
-            App.setSelection(idsToSelect.map(keyC));
+App.events.addEventListener('selection:change', () => {
+    document.querySelectorAll('.control.selected, .wire.selected').forEach((el) => el.classList.remove('selected'));
+    App.getSelection().forEach((key) => {
+        if (key.startsWith('c:')) {
+            const control = App.getControl(key.slice(2));
+            if (control) control.el.classList.add('selected');
+        } else if (key.startsWith('w:')) {
+            const wire = App.getWire(key.slice(2));
+            if (wire) wire.pathEl.classList.add('selected');
         }
-    }
-
-    canvas.addEventListener('click', (e) => {
-        if (window.WiresModule && window.WiresModule.isEraserActive()) return;
-        const controlEl = e.target.closest('.control');
-        if (controlEl) {
-            selectControl(controlEl.dataset.id, e.ctrlKey || e.metaKey);
-            return;
-        }
-        if (e.target === canvas) App.clearSelection();
     });
+});
 
-    // ---------------- Rubber-band multi-select ----------------
-    if (btnMultiselect) {
-        btnMultiselect.addEventListener('click', () => {
-            multiSelectMode = !multiSelectMode;
-            btnMultiselect.classList.toggle('selected', multiSelectMode);
+// ---------------- Click-to-select ----------------
+
+const selectControl = (id, additive) => {
+    const control = App.getControl(id);
+    const ids = control && control.groupId
+        ? App.allControls().filter((other) => other.groupId === control.groupId).map((other) => other.id)
+        : [id];
+
+    if (additive) {
+        ids.forEach((controlId) => {
+            const key = controlKey(controlId);
+            if (App.isSelected(key)) App.removeFromSelection(key);
+            else App.addToSelection(key);
         });
+    } else {
+        App.setSelection(ids.map(controlKey));
     }
+};
 
-    canvas.addEventListener('mousedown', (e) => {
-        if (!multiSelectMode) return;
-        if (e.target.closest('.control') || e.target.closest('.node')) return;
+viewport.addEventListener('click', (event) => {
+    const controlEl = event.target.closest('.control');
+    if (controlEl) {
+        selectControl(controlEl.dataset.id, event.ctrlKey || event.metaKey);
+        return;
+    }
+    if (event.target.closest('.wire')) return; // wires handle their own click
+    App.clearSelection();
+});
 
-        const rect = canvas.getBoundingClientRect();
-        const scale = window.WiresModule ? window.WiresModule.getScale() : 1;
-        const startX = (e.clientX - rect.left) / scale + canvas.scrollLeft;
-        const startY = (e.clientY - rect.top) / scale + canvas.scrollTop;
+// ---------------- Rubber-band multi-select ----------------
 
-        const band = document.createElement('div');
-        band.style.position = 'absolute';
-        band.style.border = '1px dashed var(--color-selected, #2979ff)';
-        band.style.background = 'rgba(41,121,255,0.12)';
-        band.style.left = startX + 'px';
-        band.style.top = startY + 'px';
-        band.style.zIndex = '50';
-        band.style.pointerEvents = 'none';
-        canvas.appendChild(band);
-
-        function onMove(ev) {
-            const x = (ev.clientX - rect.left) / scale + canvas.scrollLeft;
-            const y = (ev.clientY - rect.top) / scale + canvas.scrollTop;
-            band.style.left = Math.min(startX, x) + 'px';
-            band.style.top = Math.min(startY, y) + 'px';
-            band.style.width = Math.abs(x - startX) + 'px';
-            band.style.height = Math.abs(y - startY) + 'px';
-        }
-        function onUp() {
-            document.removeEventListener('mousemove', onMove);
-            document.removeEventListener('mouseup', onUp);
-            const bandRect = band.getBoundingClientRect();
-            const picked = App.allControls()
-                .filter(c => {
-                    const r = c.el.getBoundingClientRect();
-                    return r.left < bandRect.right && r.right > bandRect.left &&
-                        r.top < bandRect.bottom && r.bottom > bandRect.top;
-                })
-                .map(c => keyC(c.id));
-            App.setSelection(picked);
-            band.remove();
-        }
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
+if (multiselectButton) {
+    multiselectButton.addEventListener('click', () => {
+        multiSelectMode = !multiSelectMode;
+        multiselectButton.classList.toggle('selected', multiSelectMode);
     });
+}
 
-    // ---------------- Delete ----------------
-    function deleteSelection() {
-        App.getSelection().forEach(key => {
-            if (key.startsWith('c:')) App.removeControl(key.slice(2));
-            else if (key.startsWith('w:')) App.removeWire(key.slice(2));
-        });
-        App.clearSelection();
-    }
+export const beginRubberBand = (event) => {
+    event.preventDefault();
+    const start = App.clientToWorld(event.clientX, event.clientY);
+    const additive = event.ctrlKey || event.metaKey;
+    const previous = additive ? App.getSelection() : [];
 
-    document.addEventListener('keydown', (e) => {
-        if (e.key !== 'Delete' && e.key !== 'Backspace') return;
-        const tag = document.activeElement && document.activeElement.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-        deleteSelection();
-    });
+    const band = document.createElement('div');
+    band.style.cssText =
+        'position:absolute;z-index:50;pointer-events:none;' +
+        'border:1px dashed var(--color-selected, #2979ff);background:rgba(41,121,255,0.12);';
+    band.style.left = `${start.x}px`;
+    band.style.top = `${start.y}px`;
+    world.appendChild(band);
 
-    // ---------------- Cut / copy / paste ----------------
-    function serializeSelectedControls() {
-        return App.getSelection()
-            .filter(k => k.startsWith('c:'))
-            .map(k => App.getControl(k.slice(2)))
-            .filter(Boolean)
-            .map(c => ({ type: c.type, x: c.x, y: c.y, inputCount: c.inputCount }));
-    }
+    let bounds = { left: start.x, top: start.y, right: start.x, bottom: start.y };
+    let moved = false;
 
-    function copySelection() { clipboard = serializeSelectedControls(); }
-    function cutSelection() { copySelection(); deleteSelection(); }
-
-    function pasteClipboard() {
-        if (!clipboard.length || !window.CanvasModule) return;
-        const newKeys = clipboard.map(item => {
-            const control = window.CanvasModule.placeControl(item.type, item.x + 40, item.y + 40, item.inputCount);
-            return control ? keyC(control.id) : null;
-        }).filter(Boolean);
-        App.setSelection(newKeys);
-    }
-
-    // ---------------- Flip ----------------
-    function flip(axis) {
-        App.getSelection().filter(k => k.startsWith('c:')).forEach(key => {
-            const c = App.getControl(key.slice(2));
-            if (!c) return;
-            c.flipH = c.flipH || false;
-            c.flipV = c.flipV || false;
-            if (axis === 'h') c.flipH = !c.flipH;
-            else c.flipV = !c.flipV;
-            c.el.style.transform = 'scale(' + (c.flipH ? -1 : 1) + ', ' + (c.flipV ? -1 : 1) + ')';
-        });
-    }
-
-    // ---------------- Group ----------------
-    function group() {
-        const ids = App.getSelection().filter(k => k.startsWith('c:')).map(k => k.slice(2));
-        if (ids.length < 2) return;
-        const gid = 'grp-' + (nextGroupId++);
-        ids.forEach(id => {
-            const c = App.getControl(id);
-            if (c) c.groupId = gid;
-        });
-    }
-
-    // ---------------- Toolbar bindings ----------------
-    const bind = (id, fn) => {
-        const el = document.getElementById(id);
-        if (el) el.addEventListener('click', fn);
+    const onMove = (moveEvent) => {
+        const point = App.clientToWorld(moveEvent.clientX, moveEvent.clientY);
+        bounds = {
+            left: Math.min(start.x, point.x),
+            top: Math.min(start.y, point.y),
+            right: Math.max(start.x, point.x),
+            bottom: Math.max(start.y, point.y),
+        };
+        if (bounds.right - bounds.left > 2 || bounds.bottom - bounds.top > 2) moved = true;
+        band.style.left = `${bounds.left}px`;
+        band.style.top = `${bounds.top}px`;
+        band.style.width = `${bounds.right - bounds.left}px`;
+        band.style.height = `${bounds.bottom - bounds.top}px`;
     };
-    bind('btn-delete', deleteSelection);
-    bind('btn-cut', cutSelection);
-    bind('btn-copy', copySelection);
-    bind('btn-paste', pasteClipboard);
-    bind('btn-flip-h', () => flip('h'));
-    bind('btn-flip-v', () => flip('v'));
-    bind('btn-group', group);
 
-    window.SelectionModule = {
-        deleteSelection, copySelection, cutSelection, pasteClipboard, flip, group,
-        isMultiSelectMode: () => multiSelectMode,
+    const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        band.remove();
+        if (!moved) return; // a plain click on empty space clears the selection via the click handler
+
+        // Compare in world coordinates: x/y are stored, offsetWidth/Height are unscaled.
+        const picked = App.allControls()
+            .filter((control) =>
+                control.x < bounds.right && control.x + control.el.offsetWidth > bounds.left &&
+                control.y < bounds.bottom && control.y + control.el.offsetHeight > bounds.top)
+            .map((control) => controlKey(control.id));
+
+        App.setSelection([...new Set([...previous, ...picked])]);
+        App.swallowNextClick();
     };
-})();
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+};
+
+// ---------------- Delete ----------------
+
+export const deleteSelection = () => {
+    App.getSelection().forEach((key) => {
+        if (key.startsWith('c:')) App.removeControl(key.slice(2));
+        else if (key.startsWith('w:')) App.removeWire(key.slice(2));
+    });
+    App.clearSelection();
+};
+
+document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+    const tag = document.activeElement && document.activeElement.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    deleteSelection();
+});
+
+// ---------------- Cut / copy / paste ----------------
+
+const selectedControls = () =>
+    App.getSelection()
+        .filter((key) => key.startsWith('c:'))
+        .map((key) => App.getControl(key.slice(2)))
+        .filter(Boolean);
+
+export const copySelection = () => {
+    clipboard = selectedControls().map((control) => ({
+        type: control.type, x: control.x, y: control.y, inputCount: control.inputCount,
+    }));
+};
+
+export const cutSelection = () => {
+    copySelection();
+    deleteSelection();
+};
+
+export const pasteClipboard = () => {
+    if (clipboard.length === 0) return;
+    const keys = clipboard
+        .map((item) => Canvas.placeControl(item.type, item.x + 40, item.y + 40, item.inputCount))
+        .filter(Boolean)
+        .map((control) => controlKey(control.id));
+    App.setSelection(keys);
+};
+
+// ---------------- Flip ----------------
+
+export const flip = (axis) => {
+    selectedControls().forEach((control) => {
+        if (axis === 'h') control.flipH = !control.flipH;
+        else control.flipV = !control.flipV;
+        control.el.style.transform = `scale(${control.flipH ? -1 : 1}, ${control.flipV ? -1 : 1})`;
+        App.emit('control:flip', control); // wires.js re-measures nodes and redraws attached wires
+    });
+};
+
+// ---------------- Group ----------------
+
+export const group = () => {
+    const controls = selectedControls();
+    if (controls.length < 2) return;
+    const groupId = `grp-${nextGroupId++}`;
+    controls.forEach((control) => {
+        control.groupId = groupId;
+    });
+};
+
+// ---------------- Toolbar bindings ----------------
+
+const bind = (id, handler) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('click', handler);
+};
+
+bind('btn-delete', deleteSelection);
+bind('btn-cut', cutSelection);
+bind('btn-copy', copySelection);
+bind('btn-paste', pasteClipboard);
+bind('btn-flip-h', () => flip('h'));
+bind('btn-flip-v', () => flip('v'));
+bind('btn-group', group);

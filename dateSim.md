@@ -101,3 +101,45 @@ Each conversation is a sequence of discrete logic challenges. Every challenge mu
 
 ## 6. Recommended Codebase Architecture
 The codebase is structured into modular JavaScript files to isolate rendering, dialogue logic, audio assets, and real-time circuit evaluation:
+
+| File | Role |
+|---|---|
+| `datingSimIndex.html` | Page structure: overworld screen + encounter screen |
+| `datingSimStyle.css` | Own placeholder palette (does not use the simulator's `style.css`) |
+| `datingSimMain.js` | Entry point; imports and starts the four modules below |
+| `datingSimRender.js` | Screens, overworld `<canvas>` + DOM gate layer, encounter UI |
+| `datingSimDialogue.js` | Modular dialogue tree and challenge flow |
+| `datingSimAudio.js` | Per-NPC voice recordings |
+| `datingSimCircuit.js` | Gate evaluation, challenge answers, circuit multiplier |
+
+**Current status: skeleton only.** The files above exist with the structure,
+placeholder copy, and empty functions marked `TODO`. No game logic, art, NPC
+content or audio has been built. Preview the encounter layout with
+`datingSimIndex.html?screen=encounter`.
+
+---
+
+## Decisions Log
+Answers given by the user so far (each one already reflected in the files):
+* **Entry point:** "Lonly? → Yes" in the simulator opens `datingSimIndex.html` in a **new browser tab**; the simulator is left untouched.
+* **Overworld rendering — hybrid:** the player and the tentacle are drawn on a real HTML5 `<canvas>` (`#overworld-canvas`), while the targets/gates are DOM elements in `#overworld-gates` layered over it. This matches the wording of Section 2 while keeping the gates easy to hit-test and reuse.
+* **File names:** exactly the seven files listed in Section 6.
+* **Scope right now:** skeletons only. Every game value (points per NPC, multiplier, penalty, challenge counts, endings, NPC names/personalities) is deferred and will be defined later by the project owner.
+* **IMPLIES gate:** not added to the logic simulator at this time (the earlier suggestion was dropped). `datingSimCircuit.js` lists `'implies'` in `GATE_KINDS` as a placeholder only.
+* **Page technology:** ES modules, so the page must be served over http (Live Server / Codespaces), not opened from `file://`.
+
+---
+
+## Open Questions
+Kept current as questions are answered.
+1. **Points per NPC (*n*):** how many points is each of the 8 NPCs worth? Are they all equal?
+2. **Challenges per conversation:** how many challenges make a conversation, how many must be answered correctly to connect, and how many mistakes cause a failure?
+3. **Failure penalty:** how much does the connection % drop when an attempt fails?
+4. **Circuit multiplier:** what formula turns a working circuit into extra percentage ("significantly faster")? Does it depend on gate types, count, or shape?
+5. **Reaching "exactly 100%":** what happens if points or multipliers would overshoot 100%? How is the total arranged so exactly 100% is reachable?
+6. **Multiple endings:** how many endings are there, and what decides which one plays (circuits built, dialogue paths, order)?
+7. **IMPLIES:** one NPC maps to IMPLIES, but the simulator has no IMPLIES gate and none is being added now. When the game needs it, should the game module build it from other gates (e.g. NOT + OR), or should IMPLIES be added to the simulator?
+8. **Category naming:** the Section 5 category list says "Bivalent logic questions", but the template heading says "Boolean Logic". Are these the same category, and which name is correct?
+9. **Sharing state with the simulator:** the game opens in a new tab. Should it read anything from the simulator (for example the circuit saved in `localStorage`), or is it fully independent?
+10. **The 8 NPCs:** names, personalities, conversational styles, visual themes, sprites, backgrounds and voice recordings (all original; no AI art).
+11. **Overworld details:** how many gates appear at once, how they are placed (spacing, overlap rules), and what dragging a tentacle looks like.

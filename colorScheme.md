@@ -1,9 +1,9 @@
 # Logic Circuit Design System - Color Scheme
 
-> Rewritten to match the current `style.css` / `index.html` exactly (these
-> two files are the source of truth; this document follows them, not the
-> other way around). Every token below is a real CSS custom property
-> already defined in `style.css`'s `:root` block.
+> Matches the current `style.css` / `index.html` (those two files are the
+> source of truth; this document follows them). Every token below is a real
+> CSS custom property defined in `style.css`'s `:root` block. The dating-sim
+> page has its own separate palette — see the last section.
 
 ## Light mode (default)
 
@@ -14,45 +14,62 @@
 | `--color-header-text` | `#f8f9fa` | Header text |
 | `--color-toolbar-bg` | `#343a40` | `#tabs`, `#toolbar`, `#status-bar` |
 | `--color-toolbar-text` | `#f8f9fa` | Toolbar/status text |
-| `--color-canvas-bg` | `#f4f5f7` | `#canvas` background + dot grid |
-| `--color-grid-dot` | `rgba(33,37,41,0.14)` | Canvas grid dots |
+| `--color-canvas-bg` | `#f4f5f7` | `#canvas` (the scrolling viewport) background |
+| `--color-grid-dot` | `rgba(33,37,41,0.14)` | Dot grid, drawn on `#canvas-world` so it pans and zooms with the content |
 | `--color-gate-bg` | `#ffffff` | Gate/control body fill |
-| `--color-gate-border` | `#212529` | Gate/control outlines, node rings, default wire color |
+| `--color-gate-border` | `#212529` | Gate/control outlines, node rings, wire outline, default wire color |
 | `--color-true` | `#ff6f00` (bright orange) | Signal = 1 / High |
-| `--color-false` | `#5c6b73` (blue-gray, reasonable-guess exact shade) | Signal = 0 / Low |
-| `--color-error` | `#ff1744` (bright neon red) | Fault/warning states |
-| `--color-input` | `#008080` (teal, reasonable-guess exact shade) | Left accent border on `#input-controls .palette-item` only |
-| `--color-output` | `#ffc107` (golden-yellow, reasonable-guess exact shade) | Left accent border on `#output-controls .palette-item`; also reused as `--color-focus` |
-| `--color-panel-header-bg` | `#191970` (dark cobalt/purple) | `.panel h3` (Input/Output/Logic Gates/Truth Tables headers alike) |
+| `--color-false` | `#5c6b73` (blue-gray, reasonable-guess shade) | Dark-mode toggle "off" track |
+| `--color-error` | `#ff1744` (bright neon red) | Rejected drop flash, DIRE warning dialog |
+| `--color-input` | `#008080` (teal, reasonable-guess shade) | Top accent border on `#input-controls .palette-item`; notice-level dialog accent |
+| `--color-output` | `#ffc107` (golden-yellow, reasonable-guess shade) | Top accent border on `#output-controls .palette-item`; also reused as `--color-focus` |
+| `--color-panel-header-bg` | `#191970` (dark cobalt/purple) | `.panel h3`, popup title bars |
 | `--color-panel-header-text` | `#ffffff` | Panel header text |
 | `--color-panel-bg` | `#d0e1fd` (pale cornflower blue) | `.panel-items`, `#truth-tables-list` backgrounds |
-| `--color-node-unattached` | `#2e7d32` (green, reasonable-guess) | An input node that has never had a wire attached (idle state only — see note below) |
-| `--color-selected` | `#2979ff` (blue, reasonable-guess) | Outline on a selected `.control` or `.wire` |
-| `--color-wire` | `var(--color-gate-border)` | Default/no-signal wire color |
-| `--color-signal-on` | `var(--color-true)` | Toggle/push-button/constant/clock "on" face |
-| `--color-signal-off` | `#ffffff` | Same controls' "off" face |
-| `--color-collapse-accent` / `-hover` | `#1a8f8f` / `#147373` | `#btn-collapse-left`/`#btn-collapse-right` |
+| `--color-node-unattached` | `#2e7d32` (green) | `.node-in.drop-target` only: the live "you can drop here" cue while a wire is being dragged |
+| `--color-selected` | `#2979ff` (blue) | Outline on a selected `.control` or `.wire`; rubber-band box |
+| `--color-wire` | `var(--color-gate-border)` | Default wire color |
+| `--color-wire-clock` | `#9e9e9e` | A wire carrying a Clock's output (`.signal-clock`) |
+| `--color-signal-on` | `var(--color-true)` | Toggle/push-button/constant/clock/bulb "on" face |
+| `--color-signal-off` | `#ffffff` | Same controls' "off" face; low (0) wires |
+| `--color-stepper` / `--color-stepper-hover` | `#1a8f8f` / `#147373` | The input-count `+` / `-` stepper buttons |
 | `--color-bg` / `--color-text` / `--color-border` | `#ffffff` / `#212529` / `#ccc` | Generic page neutrals |
+| `--node-stub` | `8px` | Length of the connector line between a node and its body (not a color) |
 
-**Note on input/output color-coding:** the spec line "Teal for inputs,
-Golden-Yellow for outputs" is applied to the **palette items** in the
-Input Controls / Output Controls sections (a colored top border), not to
-the section headers — headers use the same cobalt/purple treatment as
-every other panel per the adjoining spec sentence. Nodes on the canvas
-(the small circles) stay plain white/dark-outline at rest; the only node
-recoloring is `.node-in.unattached` (green), and only for a node that has
-**never** had a wire attached — a node being targeted mid-drag by an
-in-progress wire does **not** change color.
+`--color-collapse-accent` / `-hover` were removed together with the side-panel
+collapse buttons. The stepper buttons had been sharing those values, so they
+were renamed `--color-stepper` / `--color-stepper-hover` (same colors).
+
+**Note on input/output color-coding:** "Teal for inputs, Golden-Yellow for
+outputs" is applied to the **palette items** (a colored top border), not to
+the section headers, which share the cobalt/purple treatment. Nodes on the
+canvas stay plain white/dark-outline at rest. Only two things recolor a node:
+`.drop-target` (green, while a wire is being dragged, and only for input
+nodes that have no wire yet) and `.reject-flash` (red, for 0.3 s after a
+rejected drop).
+
+## Wire colors
+
+Each wire is two stacked `<path>`s in `#wire-layer`: a thicker
+`.wire-outline` (`--color-gate-border`) underneath and the colored `.wire` on
+top, so a white (low) wire stays visible against the canvas.
+
+| State | Color |
+|---|---|
+| high (1) | `--color-true` (orange) |
+| low (0) | `--color-signal-off` (white) |
+| floating (Tri-State disabled) / no signal | no signal class: `--color-wire` |
+| driven by a Clock | `--color-wire-clock` (gray) |
+| selected | `--color-selected`, thicker |
+| being dragged (`.pending`) | dashed `--color-gate-border` |
 
 ## Dark mode — "Tokyo Night"
 
-Inspired by the lights of downtown Tokyo after dark: deep dark-blue
-tones with vibrant neon accents (the same palette widely packaged as a
-"Tokyo Night" theme for Windows, code editors, and browsers). Applied by
-JS adding a `dark-mode` class to `<body>` (via `#dark-mode-toggle`).
-Because every rule in `style.css` already reads from the tokens above,
-overriding them under `body.dark-mode` re-themes the entire app — no
-other CSS had to change.
+Inspired by the lights of downtown Tokyo after dark: deep dark-blue tones
+with vibrant neon accents. Applied by JS adding a `dark-mode` class to
+`<body>` (via `#dark-mode-toggle`, remembered in `localStorage`). Because
+every rule in `style.css` reads from the tokens above, overriding them under
+`body.dark-mode` re-themes the entire app.
 
 | Token | Dark value |
 |---|---|
@@ -74,24 +91,30 @@ other CSS had to change.
 | `--color-bg` | `#1a1b26` |
 | `--color-text` | `#c0caf5` |
 | `--color-border` | `#414868` |
-| `--color-collapse-accent` / `-hover` | `#7dcfff` / `#5ab8e6` |
+| `--color-stepper` / `--color-stepper-hover` | `#7dcfff` / `#5ab8e6` |
 | `--color-signal-off` | `#24283b` (dark surface, so "off" doesn't glow) |
 | `--color-node-unattached` | `#9ece6a` |
 | `--color-selected` | `#c0caf5` |
+| `--color-wire-clock` | `#565f89` |
 
 **Known limitation:** `--color-gate-bg` is intentionally left un-overridden
-(stays white), because the gate/palette-item icons are literal-hex inline
-SVG data URIs (`fill='#fff' stroke='#212529'`) baked in at authoring time
-— they can't read CSS variables, so they can't re-theme automatically.
-Leaving the icons white keeps them legible as a deliberate "white chip on
-a dark canvas" look; a true dark-mode icon set would need a second,
-hand-authored batch of SVGs (not done in this pass).
+(stays white) because the gate/palette icons are literal-hex inline SVG data
+URIs that can't read CSS variables. They stay white on the dark canvas by
+design; a true dark icon set would need a second batch of hand-authored SVGs.
 
-## Wire colors
+## Limit / warning dialog (`#limit-popup`)
 
-Wires aren't static markup — JS draws `<path class="wire">` into the
-`#wire-layer` SVG. `.wire` defaults to `--color-wire`; JS toggles
-`.signal-high` (`--color-true`) / `.signal-low` (`--color-false`) as the
-value it carries changes, `.pending` (dashed, `--color-gate-border`)
-while being dragged and not yet attached, and `.selected`
-(`--color-selected`) when clicked.
+One dialog serves the circuit gate limit, the speed warnings and the
+oversized-truth-table prompt. JS sets a severity class on it:
+
+| Class | Left border | Meaning |
+|---|---|---|
+| `limit-notice` | `--color-input` | Simulator ~20% slower |
+| `limit-warning` | `--color-true` | Gate limit, ~35% slower, big table |
+| `limit-dire` | `--color-error` (title, border, glow and confirm button too) | ~50% slower or worse |
+
+## Dating-sim page
+
+`datingSimStyle.css` has its **own placeholder palette** (`--ds-*` tokens) and
+does not use `style.css`. Its values are placeholders until the game's art
+direction is decided.

@@ -1,148 +1,131 @@
 # Master Prompt: Structure for the Logic Gate Simulator
 
-> Rewritten to match the current `index.html` / `style.css` exactly —
-> where this document and the files disagreed, the files won. Sections
-> below are unchanged unless noted; changed/added sections are marked.
+> Matches the current `index.html` / `style.css` (the files win where they
+> and this document disagree). Structural markup only: no inline styling and
+> no JS in the HTML.
 
-## 1. `#app-header` (top bar) — UPDATED to match actual markup
+## 1. `#app-header` (top bar)
 
-Actual structure, left to right:
-- `.header-side` (empty spacer, keeps `#logo` visually centered)
+Left to right:
+- `.header-side` (empty spacer, keeps `#logo` centered)
 - `#logo` ("Logic Gate Simulator")
 - `.header-side#header-right`, right-aligned:
   - `#account` wrapping `#btn-login` ("Sign In")
-  - `#btn-lonly` ("Lonly?")
+  - `#btn-lonly` ("Lonly?" — the spelling is intentional; opens the dating-sim page)
   - `#close-btn` (×)
 
-There is **no** `#menu` nav, `#doc-title`, or `#account-name`/"Guest"
-stack — an earlier draft of this spec called for them, but they were
-never built and the sign-in-button version is what exists. If a
-Project/Circuit/Tools/Help menu bar or a logged-in "Guest" name display
-is still wanted, that's new scope, not a correction.
+There is no `#menu` nav, `#doc-title` or "Guest" name stack.
 
 ## 2. `#tabs` (circuit tab bar)
 
-Unchanged. `.tab` contains an editable `.tab-name-input` (not static
-text) plus a `.tab-close` (×); followed by `#add-tab` ("+").
+`.tab` contains an editable `.tab-name-input` plus a `.tab-close` (×);
+followed by `#add-tab` ("+").
 
-## 3. `#toolbar` — UPDATED (per-gate input defaults)
+## 3. `#toolbar`
 
-Order and behavior unchanged from the original 20-button spec. New:
-each Logic Gates `.palette-item` now carries
-`data-min-inputs`/`data-default-inputs` (Buffer, NOT = 1; AND, NAND,
-OR, NOR, XOR, XNOR, Tri-State = 2), so the input-count stepper — now
-embedded in `#note-popup` as well as the standalone
-`#input-count-popup` (see §6) — has a real per-gate minimum to read
-instead of a single global `min="1"`. Tri-State moved from 1 to 2
-inputs because it's a standard tri-state buffer (data + enable), not a
-single-input gate like Buffer/NOT — see javaScript.md §4.
+Unchanged: save, print, clear-all, undo, redo, select, pan, play, stop,
+multiselect, cut, copy, paste, delete, flip-h, flip-v, group, grid, note (✎),
+help. Each logic-gate `.palette-item` carries `data-min-inputs` /
+`data-default-inputs` (Buffer and NOT = 1, every other gate = 2; Buffer and
+NOT never change their count).
 
 ## 4. `#main-content` (three-column body)
 
-Unchanged: `#left-panel` | `#canvas-wrapper` | `#right-panel`.
+`#left-panel` | `#canvas-wrapper` | `#right-panel`.
 
 ### 4a. `#left-panel`
 
-Unchanged. Input Controls / Output Controls palette items each get a
-colored top border (teal / golden-yellow — see colorScheme.md); Logic
-Gates palette items don't.
+Input Controls / Output Controls / Logic Gates palettes. Input and Output
+palette items get a colored top border (teal / golden-yellow). **The side
+panels have no collapse/expand buttons** (`#btn-collapse-left/right` and the
+`.collapsed` styles were removed). Individual truth-table circuits still
+collapse through their own `<details>`/`<summary>`.
 
-### 4b. `#canvas-wrapper`
+### 4b. `#canvas-wrapper` — the "infinite" canvas
 
-Unchanged (`#canvas-controls` overlay + `#canvas`), plus:
+```
+#canvas            scrolling viewport (scrollbars stay visible)
+  #canvas-sizer    resized by JS to (world size x zoom): sets the scroll area
+    #canvas-world  WORLD_SIZE x WORLD_SIZE px (20000), scaled by zoom as ONE layer
+      controls...  cloned here, positioned in world coordinates
+      svg#wire-layer  fills the world; one outline + colored <path> per wire
+```
 
-#### 4b1. Canvas control `<template>`s — NEW
+- The canvas is a very large scrollable world (a practical limit, not truly
+  unbounded). Move around by dragging empty space (either tool), by the pan
+  tool, or with the scrollbars.
+- Zoom (status-bar slider, 50%-200% in 10% steps) scales the **whole world as
+  one layer**. Every control keeps its original size relative to the others,
+  new or old. The zoom keeps the middle of the view in place.
+- The dot grid is the background of `#canvas-world`, so it pans and zooms
+  with the content; the grid toolbar button toggles it.
+- The old `#canvas-controls` box (step back, step forward, eraser) was
+  **removed**. Wires and controls are deleted by selecting them and pressing
+  Delete (or `#btn-delete`).
 
-`index.html` now defines one `<template>` per draggable thing, so JS
-has real markup to clone onto `#canvas` on drop instead of building DOM
-from scratch:
+#### 4b1. Canvas control `<template>`s
 
-- `#tpl-toggle-switch`, `#tpl-push-button`, `#tpl-clock`,
-  `#tpl-high-constant`, `#tpl-low-constant`, `#tpl-light-bulb`,
-  `#tpl-four-bit-digit` — one shape each, matching their existing
-  `style.css` classes (`.toggle-switch`, `.push-button`, `.clock`,
-  `.high-constant`/`.low-constant`, `.light-bulb`, `.four-bit-digit`).
-- `#tpl-logic-gate` — one shared template for every gate type; JS sets
-  `data-type` on the clone (which drives the icon via CSS) and
-  populates `.gate-inputs` with one `.node.node-in.unattached` per
-  input, per that gate's `data-default-inputs`.
+One `<template>` per draggable thing: `#tpl-toggle-switch`, `#tpl-push-button`,
+`#tpl-clock`, `#tpl-high-constant`, `#tpl-low-constant`, `#tpl-light-bulb`,
+`#tpl-four-bit-digit`, and one shared `#tpl-logic-gate` (JS sets `data-type`
+and builds the `.node.node-in` rows from `data-default-inputs`).
 
-Every node starts as `class="node node-in unattached"` or
-`class="node node-out"`. JS removes `unattached` once a wire attaches —
-and must **not** add any other node class while a wire is being dragged
-toward it but hasn't landed yet (see §4b2).
+**Light bulb:** the bulb comes first and its single input node comes after it,
+centered **below** the bulb. That node has `data-side="bottom"`, which tells
+`wires.js` the wire enters vertically, from below. Flip-vertical moves the
+node (and its wire) to the top.
 
-#### 4b2. Wires and nodes — NEW
+#### 4b2. Wires and nodes
 
-- `#canvas` now contains an empty `<svg id="wire-layer">` positioned
-  over the dropped controls; JS draws one `<path class="wire">` per
-  connection into it.
-- Dragging starts from an **output** node (mousedown-and-hold, then
-  drag); output nodes may have any number of wires. Input nodes may
-  have **at most one**.
-- While a wire is being dragged and hasn't attached yet, nodes it
-  passes over do **not** change appearance — no hover/target-highlight
-  state exists in CSS on purpose (see colorScheme.md's node note).
-  `.wire.pending` (dashed) is the only in-progress visual, on the wire
-  itself.
-- Once attached, `.wire.signal-high`/`.signal-low` reflect the value
-  it's carrying.
+- Dragging starts on an **output** node. Outputs may have any number of
+  wires; an input node has at most one.
+- Wires leave outputs to the right and enter inputs from the left, except a
+  node with `data-side` (the bulb: bottom). Flips mirror the sides.
+- While a wire is dragged, unoccupied input nodes show `.drop-target`
+  (cleared when the drag ends); a rejected drop flashes `.reject-flash`.
+- Wire endpoints are computed from stored control coordinates plus cached node
+  offsets, and only the wires attached to moved controls are redrawn (batched
+  with `requestAnimationFrame`).
 
-#### 4b3. Selection ("highlighted") — NEW
+#### 4b3. Selection
 
-"Highlighted" = selected, meaning the user clicked a gate, a switch/
-control, or a wire, and it can now be dragged (repositioned within, or
-dropped onto, the canvas). JS toggles a `.selected` class on the
-clicked `.control` or `.wire`; `#btn-multiselect`'s rubber-band (or
-Ctrl-click) can select more than one at once. The visual itself
-(`.control.selected`, `.wire.selected`) is fully defined in
-`style.css` — see colorScheme.md's `--color-selected` token.
+A click on a control or wire selects it (`.selected`); Ctrl/Cmd adds. With
+`#btn-multiselect` armed, dragging empty space draws a rubber-band (Ctrl/Cmd
+adds to the selection). With it off, dragging empty space pans. A drag never
+ends in a stray click that would clear the selection.
 
 ### 4c. `#right-panel`
 
-Unchanged.
+Truth Tables: `#truth-tables-list` plus `#logic-circuit-template`. Circuits
+with more than 10 switch inputs show a `.table-cap-message` instead of the
+table (see limits in javascript.md).
 
-### 4d. Collapsing the side panels
+## 5. `#status-bar`
 
-Unchanged.
+`#status-dot`, zoom out/slider/zoom in (`min=50 max=200 step=10 value=100`),
+and `#dark-mode-switch`/`#dark-mode-toggle` (adds `dark-mode` to `<body>`;
+remembered in `localStorage`).
 
-## 5. `#status-bar` (footer) — UPDATED (zoom range)
+## 6. Popups / dialogs
 
-Unchanged otherwise, including `#dark-mode-switch`/`#dark-mode-toggle`
-(checking it adds a `dark-mode` class to `<body>`, which now has a real
-theme behind it — "Tokyo Night" (see colorScheme.md) — rather than an
-empty hook; the checked state now also persists across reloads via
-`localStorage`, per javaScript.md §9). New: `#zoom-slider` carries
-`min="50" max="200" step="10" value="100"` directly in the markup —
-50%–200% zoom, 10% per step — so `#btn-zoom-out`/`#btn-zoom-in` have a
-real increment to move the slider by instead of an unspecified one.
+All are centered, fixed, and dim the page with a `body:has(...)::before` backdrop.
 
-## 6. Popups / dialogs — UPDATED (Note tool ⇄ input-count merge)
+- `#note-popup` — title, note, and (gates only) `#note-input-count-section`.
+  Opens with the ✎ tool then a click, or by double-click on any control
+  **except the Push Button**, which opens only through ✎.
+- `#input-count-popup` — count-only alternative; no trigger assigned yet.
+- `#clear-all-confirm`, `#lonly-prompt` ("Lonly? → Yes" opens
+  `datingSimIndex.html` in a **new tab**).
+- `#limit-popup` — shared warning dialog (title, message, cancel/confirm)
+  with a severity class: `limit-notice`, `limit-warning`, `limit-dire`.
+- `#login-popup` is styled in the CSS but has no markup yet.
 
-`#note-popup` and `#input-count-popup` are no longer fully separate
-concerns:
+## 7. Scripts
 
-- `#note-popup` now ends with `#note-input-count-section` — the same
-  kind of `.stepper` markup as `#input-count-popup`, under its own ids
-  (`#note-input-count`, `#note-input-count-increase`/`-decrease`) so
-  both dialogs can coexist without id collisions. JS shows this
-  section only when the note tool's target is a logic gate, and hides
-  it otherwise (switches, buttons, clocks, constants, bulbs, and the
-  4-bit digit have no adjustable input count).
-- The Note tool itself now opens on **double-click** of a gate/control,
-  in addition to the existing `#btn-note`-then-click flow — both open
-  `#note-popup`. This resolves the earlier open question about
-  double-click's role.
-- `#input-count-popup` is unchanged structurally and still exists as a
-  count-only alternative, but since double-click now opens
-  `#note-popup` instead, it currently has no assigned trigger of its
-  own (flagged in javaScript.md's open questions).
-
-Everything else in this section (the note/clear-all/lonly popups'
-own fields, `#clear-all-confirm`, `#lonly-prompt`) is unchanged.
+A single `<script type="module" src="main.js">` — `main.js` imports every
+other module. The pages must be served over http (Live Server / Codespaces);
+ES modules do not load from a `file://` URL.
 
 ## General constraints
 
-Unchanged, plus: the canvas-control templates in §4b1 are structural
-markup only (no inline styling, no JS) — same rule as everything else
-in this document.
+Structural markup only (no inline styling, no JS in the HTML).
