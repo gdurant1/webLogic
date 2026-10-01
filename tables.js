@@ -29,7 +29,11 @@ const listEl = document.getElementById('truth-tables-list');
 const circuitTemplate = document.getElementById('logic-circuit-template');
 const EMPTY_CELL = '\u2014';
 
-const cell = (value) => (value === undefined ? EMPTY_CELL : String(value));
+const cell = (value) => {
+    if (value === undefined) return EMPTY_CELL;
+    if (value === Logic.UNSTABLE) return '\u26a0'; // ⚠ — a feedback loop that never settled (Phase B Task 6.6)
+    return String(value);
+};
 
 // ---------------- Individual gate tables ----------------
 // buildGateTable() is generic — it just needs a caption, an input/output
@@ -112,7 +116,22 @@ const hasOutgoingWire = (control) => App.getWiresFromNode(`${control.id}-out`).l
  * Pure (non-mutating) evaluation of one connected group for a hypothetical
  * assignment of its toggle switches, so the master table can be filled in
  * without disturbing the real canvas state.
+ *
+ * Feedback/latches (Phase B Task 6.6): uses the SAME iterate-to-a-fixed-
+ * point-or-flag-UNSTABLE logic as logic.js's evaluate() (shared via
+ * Logic.runFixedPoint), with one deliberate difference — gate outputs are
+ * seeded with a fresh 0 on EVERY row, never persisted between rows the way
+ * evaluate() persists between live evaluations. A pure truth table has no
+ * "last time" to remember, so an SR latch's table can only show what it
+ * does from a cold power-on for each input combination, not which state it
+ * would actually be holding on the real canvas — a documented limitation,
+ * not a bug (see javascript.md).
  */
+const readValue = (values, nodeId) => {
+    const v = values.get(nodeId);
+    return v === Logic.UNSTABLE ? undefined : v;
+};
+
 const evaluateComponent = (components, switchValues) => {
     const values = new Map();
     components.forEach((control) => {
@@ -124,33 +143,31 @@ const evaluateComponent = (components, switchValues) => {
     });
 
     const gates = components.filter((control) => Logic.GATE_FUNCS[control.type] || isCustomGateControl(control));
-    for (let pass = 0; pass < gates.length + 2; pass++) {
-        let changed = false;
-        gates.forEach((gate) => {
-            const ins = [];
-            for (let i = 0; i < gate.inputCount; i++) {
-                const wire = App.getWireInto(`${gate.id}-in-${i}`);
-                ins.push(wire && values.has(wire.fromNodeId) ? values.get(wire.fromNodeId) : undefined);
-            }
-            if (isCustomGateControl(gate)) {
-                const definition = Logic.getCustomGateDefinition(gate.type.slice('custom:'.length));
-                const outs = definition ? (ins.some((v) => v === undefined) ? new Array(definition.outputCount).fill(undefined) : (definition.truthTable.get(ins.join(',')) || [])) : [];
-                outs.forEach((out, i) => {
-                    const key = `${gate.id}-out-${i}`;
-                    if (!values.has(key) || values.get(key) !== out) { values.set(key, out); changed = true; }
-                });
-            } else {
-                const key = `${gate.id}-out`;
-                const out = Logic.GATE_FUNCS[gate.type](ins);
-                if (!values.has(key) || values.get(key) !== out) {
-                    values.set(key, out);
-                    changed = true;
-                }
-            }
-        });
-        if (!changed) break;
-    }
-    return values;
+    gates.forEach((gate) => {
+        if (isCustomGateControl(gate)) {
+            const definition = Logic.getCustomGateDefinition(gate.type.slice('custom:'.length));
+            const count = definition ? definition.outputCount : 1;
+            for (let i = 0; i < count; i++) values.set(`${gate.id}-out-${i}`, 0); // fresh seed every row — no history
+        } else {
+            values.set(`${gate.id}-out`, 0);
+        }
+    });
+
+    const evaluateGate = (gate, vals) => {
+        const ins = [];
+        for (let i = 0; i < gate.inputCount; i++) {
+            const wire = App.getWireInto(`${gate.id}-in-${i}`);
+            ins.push(wire && vals.has(wire.fromNodeId) ? readValue(vals, wire.fromNodeId) : undefined);
+        }
+        if (isCustomGateControl(gate)) {
+            const definition = Logic.getCustomGateDefinition(gate.type.slice('custom:'.length));
+            const outs = definition ? (ins.some((v) => v === undefined) ? new Array(definition.outputCount).fill(undefined) : (definition.truthTable.get(ins.join(',')) || [])) : [];
+            return outs.map((out, i) => [`${gate.id}-out-${i}`, out]);
+        }
+        return [[`${gate.id}-out`, Logic.GATE_FUNCS[gate.type](ins)]];
+    };
+
+    return Logic.runFixedPoint(gates, evaluateGate, values);
 };
 
 const isCustomGateControl = (control) => typeof control.type === 'string' && control.type.startsWith('custom:');

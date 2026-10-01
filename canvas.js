@@ -113,7 +113,13 @@ const paper = new joint.dia.Paper({
     },
     validateConnection: (sourceView, sourceMagnet, targetView, targetMagnet, end, linkView) => {
         if (!sourceMagnet || !targetMagnet) return false;
-        if (sourceView === targetView) return false; // no self-loops
+        // Self-loops (a gate's own output feeding one of its own inputs) are
+        // ALLOWED — Phase B's latch/feedback support means this is now a
+        // meaningful, well-defined configuration (it either settles or is
+        // correctly reported as unstable — see logic.js), not a degenerate
+        // case to block. Phase A disallowed this outright, which turned out
+        // to also block the regression checklist's own "a single NOT gate
+        // fed back to itself reports unstable" case — caught by testing.
         const fromId = sourceMagnet.getAttribute('port');
         const toId = targetMagnet.getAttribute('port');
         if (!fromId || !toId) return false;
@@ -158,34 +164,41 @@ const GATE_DEFAULT_INPUTS = {
  *
  * `customGateId` is used only for type === 'custom': the id of a definition
  * registered by customGates.js (see that file for the definition shape).
+ *
+ * `savedId` (Phase B Save/Load): when restoring a saved circuit, pass the
+ * id that circuit recorded so its saved wires — built from those same ids —
+ * still resolve. See shapes.js's createGate for how this is actually
+ * honored by JointJS. Every other caller (palette drop, paste) omits it and
+ * gets a fresh generated id as before.
  */
-export const placeControl = (type, left, top, defaultInputs, customGateId) => {
+export const placeControl = (type, left, top, defaultInputs, customGateId, savedId) => {
     const isGate = App.GATE_TYPES.has(type);
     let cell;
     let inputCount = 0;
     let customGateWeight; // set only when type === 'custom'; read by limits.js's countGates via control.gateWeight
+    const idOpt = savedId ? { id: savedId } : {};
 
     if (isGate) {
         const source = document.querySelector(`.palette-item[data-type="${type}"]`);
         const min = source ? parseInt(source.dataset.minInputs, 10) : 1;
         const fallback = (source && parseInt(source.dataset.defaultInputs, 10)) || GATE_DEFAULT_INPUTS[type] || 2;
         inputCount = Math.max(min, defaultInputs || fallback);
-        cell = Shapes.createGate(type, inputCount);
+        cell = Shapes.createGate(type, inputCount, savedId);
     } else if (type === 'toggle-switch') {
-        cell = Shapes.addPorts(new Shapes.ToggleSwitch(), 'out');
+        cell = Shapes.addPorts(new Shapes.ToggleSwitch(idOpt), 'out');
     } else if (type === 'push-button') {
-        cell = Shapes.addPorts(new Shapes.PushButton(), 'out');
+        cell = Shapes.addPorts(new Shapes.PushButton(idOpt), 'out');
     } else if (type === 'clock') {
-        cell = Shapes.addPorts(new Shapes.Clock(), 'out');
+        cell = Shapes.addPorts(new Shapes.Clock(idOpt), 'out');
     } else if (type === 'high-constant') {
-        cell = Shapes.addPorts(new Shapes.HighConstant(), 'out');
+        cell = Shapes.addPorts(new Shapes.HighConstant(idOpt), 'out');
     } else if (type === 'low-constant') {
-        cell = Shapes.addPorts(new Shapes.LowConstant(), 'out');
+        cell = Shapes.addPorts(new Shapes.LowConstant(idOpt), 'out');
     } else if (type === 'light-bulb') {
-        cell = Shapes.addPorts(new Shapes.LightBulb(), 'in');
+        cell = Shapes.addPorts(new Shapes.LightBulb(idOpt), 'in');
         inputCount = 1;
     } else if (type === 'four-bit-digit') {
-        cell = Shapes.addPorts(new Shapes.FourBitDigit(), 'in', 4);
+        cell = Shapes.addPorts(new Shapes.FourBitDigit(idOpt), 'in', 4);
         inputCount = 4;
     } else if (type === 'custom') {
         // customGates.js owns the actual definition registry; canvas.js
@@ -195,7 +208,7 @@ export const placeControl = (type, left, top, defaultInputs, customGateId) => {
         // module-load time instead — see setCustomDefinitionResolver below.
         const definition = resolveCustomDefinition && resolveCustomDefinition(customGateId);
         if (!definition) return null;
-        cell = Shapes.createCustomGate(definition.id, definition.name, definition.inputCount, definition.outputCount);
+        cell = Shapes.createCustomGate(definition.id, definition.name, definition.inputCount, definition.outputCount, savedId);
         inputCount = definition.inputCount;
         customGateWeight = definition.gateWeight; // read by limits.js's countGates, below
     } else {
@@ -404,7 +417,55 @@ export { beginPan };
 //   - `pathEl`/`outlineEl` are the two `<path>`s Wire's own markup already
 //     renders (see shapes.js) — nothing here draws SVG by hand.
 
-const registerWire = (link) => {
+// Every link starts life as the in-progress preview of a drag (JointJS adds
+// it to the graph immediately on mousedown, with `target` as a raw {x,y}
+// point that tracks the cursor — see addLinkFromMagnet in joint.js) — and
+// that preview's own endpoint sits exactly at the cursor, so for a SHORT
+// connection (notably a self-loop: a gate's output back into its own
+// input, now allowed for Task 6.6's oscillation case) the preview's stroke
+// can cover the very port being dropped onto, making `elementFromPoint`
+// resolve to the wire instead of the magnet underneath it — confirmed
+// directly: `document.elementFromPoint` at the drop point returned the
+// `.wire` path, not the target's `.node-in` circle, and no connection was
+// ever made. Disabling pointer-events on the link's view for as long as it
+// remains a preview (no real target yet) removes it from hit-testing
+// entirely, exactly like `pending.style.pointerEvents = 'none'` did for the
+// old hand-drawn wire preview pre-JointJS. Re-enabled once it is an actual
+// connection, since a normal placed wire still needs to be clickable to
+// select it (selection.js's 'link:pointerclick').
+const setWireHitTestable = (link, hitTestable) => {
+    // Must go through the model's own `attr()` (declarative), not a raw
+    // `classList` mutation on the rendered node: the preview path's `d`
+    // attribute updates continuously while being dragged (that's what makes
+    // it follow the cursor), and each such update re-applies the model's
+    // OWN declared class string for that selector — confirmed directly: a
+    // `classList.toggle` version of this fix showed the class correctly
+    // applied at the very instant the link was created, then silently gone
+    // again after the first mousemove, same root cause as the flip/classList
+    // bug found earlier (JointJS reapplies declared attrs on re-render,
+    // discarding anything added outside the model). Setting it here means
+    // every one of those re-renders reapplies the value I actually want.
+    link.attr('line/class', hitTestable ? 'wire' : 'wire connecting');
+};
+
+graph.on('add', (cell) => {
+    if (typeof cell.isLink === 'function' && cell.isLink()) setWireHitTestable(cell, false);
+});
+
+/**
+ * Exported for saveLoad.js: a restored wire is constructed with its final
+ * `source`/`target` already set in the Link's initial attributes, rather
+ * than changed via a later `.set()` call the way a user's drag does it —
+ * and Backbone-style models (which this joint.js's Cell is built on) don't
+ * fire `change:` events for a brand-new model's very first attribute
+ * assignment during construction, only for an actual change from one value
+ * to another afterward. Confirmed directly: a restored link's cell existed
+ * fine in the graph (its ports resolved, `App.getNode()` succeeded for
+ * both ends) but `allWires()` stayed empty — the `change:target` listener
+ * below, which does the real registration, simply never ran for it. So
+ * restore must call this directly instead of relying on that event.
+ */
+export const registerWire = (link) => {
     const source = link.get('source');
     const target = link.get('target');
     const fromNodeId = source && source.port;
@@ -431,6 +492,18 @@ const registerWire = (link) => {
     if (to) to.el.classList.remove('unattached');
 };
 
+// Phase B Save/Load: a restored wire is constructed with its final
+// source/target already set (not dragged into place by the user), so it
+// goes through this exact same 'change:target' path — but it must never
+// re-trigger the gate-limit approval dialog for a circuit a PREVIOUS
+// session already approved (saveLoad.js restores `capApproved` for that
+// case too, but a circuit over the limit at save time still needs to not
+// be blocked while its wires are being recreated one at a time, before all
+// of them — and their capApproved flags — are back in place). saveLoad.js
+// sets this flag for the duration of its restore work.
+let restoring = false;
+export const setRestoring = (flag) => { restoring = flag; };
+
 graph.on('change:target', async (link) => {
     if (typeof link.isLink !== 'function' || !link.isLink()) return;
     if (App.getWire(link.id)) return; // already registered (defensive)
@@ -439,22 +512,26 @@ graph.on('change:target', async (link) => {
     const source = link.get('source');
     if (!target || !target.id || !source || !source.id) return; // still being dragged
 
+    setWireHitTestable(link, true); // it's a real connection now, not a preview — see the 'add' listener above
+
     const fromNodeId = source.port;
     const toNodeId = target.port;
     if (!fromNodeId || !toNodeId) return;
 
-    const check = Limits.checkConnection(fromNodeId, toNodeId);
-    if (check.needsApproval) {
-        const approved = await Limits.requestCircuitApproval(check.gateCount, check.controlIds);
-        if (!approved) {
+    if (!restoring) {
+        const check = Limits.checkConnection(fromNodeId, toNodeId);
+        if (check.needsApproval) {
+            const approved = await Limits.requestCircuitApproval(check.gateCount, check.controlIds);
+            if (!approved) {
+                if (graph.getCell(link.id)) link.remove();
+                return;
+            }
+        }
+        // The dialog is modal, but re-check in case anything changed meanwhile.
+        if (App.isNodeOccupied(toNodeId)) {
             if (graph.getCell(link.id)) link.remove();
             return;
         }
-    }
-    // The dialog is modal, but re-check in case anything changed meanwhile.
-    if (App.isNodeOccupied(toNodeId)) {
-        if (graph.getCell(link.id)) link.remove();
-        return;
     }
     registerWire(link);
 });

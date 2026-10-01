@@ -1157,9 +1157,22 @@ body:has(#custom-gate-delete-confirm:not([hidden]))::before {
     cursor: pointer;
     pointer-events: stroke;
 }
+/* Applied only while a link is still the in-progress preview of a drag (see
+   canvas.js's setWireHitTestable) — its own endpoint sits exactly at the
+   cursor, which for a short connection (a self-loop, Phase B Task 6.6's
+   oscillation case) can cover the very port being dropped onto, so
+   elementFromPoint finds the wire instead of the magnet underneath it.
+   Two classes, so this correctly outranks the plain `.wire` rule above
+   regardless of source order. */
+.wire.connecting { pointer-events: none; }
 .wire.signal-high { stroke: var(--color-true); }
 .wire.signal-low { stroke: var(--color-signal-off); }
 .wire.signal-clock { stroke: var(--color-wire-clock); }
+/* A feedback loop that never reached a stable value within the pass cap
+   (e.g. a NOT gate wired to feed its own input) — Phase B latch support,
+   logic.js's UNSTABLE. Dashed + the error color so it reads as "wrong",
+   not just another signal state. */
+.wire.signal-unstable { stroke: var(--color-error); stroke-dasharray: 4 3; }
 
 /* ---------- Selection ---------- */
 .control.selected .gate-body,

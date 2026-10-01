@@ -22,7 +22,11 @@
  * logic.js itself (for their late-bound resolvers — see that file's
  * header for why a two-way static import back here would be circular), so
  * by the time ITS body runs, both are already fully evaluated regardless of
- * where its import line sits below.
+ * where its import line sits below. saveLoad.js (Phase B) imports
+ * customGates.js for the same reason (a restored circuit's custom-gate
+ * instances need to resolve against already-loaded definitions), which is
+ * why CustomGates.loadFromStorage() below must run BEFORE SaveLoad.
+ * loadAtStartup() — the palette/definition registry has to exist first.
  */
 import * as Canvas from './canvas.js';
 import './selection.js';
@@ -31,10 +35,12 @@ import * as Tables from './tables.js';
 import * as Toolbar from './toolbar.js'; // also wires up dark mode — see its header
 import './popups.js';
 import * as CustomGates from './customGates.js';
+import * as SaveLoad from './saveLoad.js';
 
 const start = () => {
     Toolbar.initViewport();
-    CustomGates.loadFromStorage(); // populate the Custom Gates palette before the first render
+    CustomGates.loadFromStorage(); // populate the Custom Gates palette before anything tries to restore an instance of one
+    SaveLoad.loadAtStartup(); // not awaited — its own synchronous path (no saved data, or a successful restore) completes before the next line either way; only the rare corrupt-data dialog is actually async
     Logic.evaluate();
     Tables.rebuild();
 };

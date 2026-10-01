@@ -113,57 +113,143 @@ const getSourceValue = (control) => {
 const valueInto = (nodeId, values, fallback) => {
     const wire = App.getWireInto(nodeId);
     if (!wire || !values.has(wire.fromNodeId)) return fallback;
-    return values.get(wire.fromNodeId);
+    const v = values.get(wire.fromNodeId);
+    return v === UNSTABLE ? undefined : v; // unstable behaves as "unknown" for anything reading it
+};
+
+/**
+ * Feedback / latch support (Phase B Task 6.6).
+ * ---------------------------------------------------------------------------
+ * Gate outputs are seeded from their own PERSISTED last value (0 the very
+ * first time a gate exists, since nothing has run yet) instead of being
+ * left unset. This is what lets a feedback loop settle at all: with no
+ * seed, two gates that each read the other's "undefined" output can never
+ * produce anything but undefined, forever — an SR latch built from two
+ * cross-coupled NOR gates would never light up. Seeding from last-known
+ * state (not a fresh 0 every time) is also what makes the latch a latch:
+ * it holds whatever it last settled to across unrelated evaluations,
+ * exactly like real hardware, until an actual input change flips it.
+ *
+ * `runFixedPoint` is shared with tables.js's evaluateComponent — the master
+ * truth table runs the SAME iterate-to-a-fixed-point-or-flag-unstable logic
+ * per row, just without the cross-row persistence (each row seeds fresh
+ * from 0, documented as a limitation: a pure truth table has no history, so
+ * it can only show a latch's power-on behavior, not which state it would
+ * actually be holding).
+ */
+export const UNSTABLE = 'unstable';
+const FEEDBACK_PASS_CAP = 50; // generous for any real feedback circuit; a true oscillator still exhausts this every time
+
+/**
+ * Iterate `gates` to a fixed point against an already-seeded `values` Map
+ * (sources and each gate's starting output already in place — see
+ * evaluate() and tables.js's evaluateComponent for the two ways that
+ * seeding happens). `evaluateGate(gate, values)` must return this pass's
+ * `[key, out]` pairs for that gate (one pair per output). Mutates and
+ * returns `values`; any node that never reaches a fixed point within
+ * FEEDBACK_PASS_CAP passes ends up holding `UNSTABLE` instead of 0/1/undefined
+ * — e.g. a NOT gate wired to feed its own input, which has no stable state.
+ */
+export const runFixedPoint = (gates, evaluateGate, values) => {
+    let settled = false;
+    for (let pass = 0; pass < FEEDBACK_PASS_CAP; pass++) {
+        let changed = false;
+        gates.forEach((gate) => {
+            evaluateGate(gate, values).forEach(([key, out]) => {
+                if (values.get(key) !== out) { values.set(key, out); changed = true; }
+            });
+        });
+        if (!changed) { settled = true; break; }
+    }
+
+    if (!settled) {
+        // One more pass, purely to see which specific node(s) are STILL
+        // changing — those are the genuinely unstable ones, as opposed to
+        // everything else that happened to settle fine but just shares a
+        // graph with the oscillating part.
+        const before = new Map(values);
+        gates.forEach((gate) => {
+            evaluateGate(gate, values).forEach(([key, out]) => {
+                if (before.get(key) !== out) values.set(key, UNSTABLE);
+            });
+        });
+    }
+    return values;
 };
 
 export const evaluate = () => {
     const started = performance.now();
     const controls = App.allControls();
-    const values = new Map(); // nodeId -> 0 | 1 | undefined (floating / unknown)
+    const gates = controls.filter((control) => GATE_FUNCS[control.type] || isCustomGate(control));
 
+    const evaluateGate = (gate, values) => {
+        const ins = [];
+        for (let i = 0; i < gate.inputCount; i++) ins.push(valueInto(`${gate.id}-in-${i}`, values, undefined));
+        if (isCustomGate(gate)) {
+            const definition = customGateLookup && customGateLookup(gate.type.slice('custom:'.length));
+            return evaluateCustomGate(definition, ins).map((out, i) => [`${gate.id}-out-${i}`, out]);
+        }
+        return [[`${gate.id}-out`, GATE_FUNCS[gate.type](ins)]];
+    };
+
+    // Sources first (they have no inputs, so order amongst themselves never
+    // matters, but gates need them present before their own first pass).
+    // Then each gate's output is seeded from its own PERSISTED last value —
+    // 0 the very first time it exists (nothing has run yet), or whatever it
+    // last settled to otherwise. This persistence (not a fresh 0 every call)
+    // is what makes a latch a latch: it holds its state across unrelated
+    // evaluate() calls, exactly like real hardware, until an actual input
+    // change flips it — and seeding with 0 rather than leaving it unset is
+    // what lets a feedback loop (two gates each reading the other's output)
+    // settle at all, instead of being permanently stuck at undefined.
+    const values = new Map();
     controls.forEach((control) => {
         if (SOURCE_TYPES.has(control.type)) values.set(`${control.id}-out`, getSourceValue(control));
     });
+    gates.forEach((gate) => {
+        if (isCustomGate(gate)) {
+            const definition = customGateLookup && customGateLookup(gate.type.slice('custom:'.length));
+            const count = definition ? definition.outputCount : (gate.lastOutputs || []).length || 1;
+            for (let i = 0; i < count; i++) {
+                const prior = gate.lastOutputs && gate.lastOutputs[i];
+                values.set(`${gate.id}-out-${i}`, prior !== undefined ? prior : 0);
+            }
+        } else {
+            values.set(`${gate.id}-out`, gate.lastOutput !== undefined ? gate.lastOutput : 0);
+        }
+    });
 
-    const gates = controls.filter((control) => GATE_FUNCS[control.type] || isCustomGate(control));
-    for (let pass = 0; pass < gates.length + 2; pass++) {
-        let changed = false;
-        gates.forEach((gate) => {
-            const ins = [];
-            for (let i = 0; i < gate.inputCount; i++) {
-                ins.push(valueInto(`${gate.id}-in-${i}`, values, undefined));
+    runFixedPoint(gates, evaluateGate, values);
+
+    // Persist each gate's settled (or unstable) output for the NEXT
+    // evaluate() call — the actual "latch holds state" mechanism.
+    gates.forEach((gate) => {
+        if (isCustomGate(gate)) {
+            const definition = customGateLookup && customGateLookup(gate.type.slice('custom:'.length));
+            const count = definition ? definition.outputCount : 1;
+            gate.lastOutputs = [];
+            for (let i = 0; i < count; i++) {
+                const v = values.get(`${gate.id}-out-${i}`);
+                gate.lastOutputs.push(v === UNSTABLE ? undefined : v);
             }
-            if (isCustomGate(gate)) {
-                const definition = customGateLookup && customGateLookup(gate.type.slice('custom:'.length));
-                const outs = evaluateCustomGate(definition, ins);
-                outs.forEach((out, i) => {
-                    const key = `${gate.id}-out-${i}`;
-                    if (!values.has(key) || values.get(key) !== out) {
-                        values.set(key, out);
-                        changed = true;
-                    }
-                });
-            } else {
-                const key = `${gate.id}-out`;
-                const out = GATE_FUNCS[gate.type](ins);
-                if (!values.has(key) || values.get(key) !== out) {
-                    values.set(key, out);
-                    changed = true;
-                }
-            }
-        });
-        if (!changed) break;
-    }
+        } else {
+            const v = values.get(`${gate.id}-out`);
+            gate.lastOutput = v === UNSTABLE ? undefined : v;
+        }
+    });
 
     App.allWires().forEach((wire) => {
         const value = values.has(wire.fromNodeId) ? values.get(wire.fromNodeId) : undefined;
         wire.signal = value;
         // A wire carrying a Clock's output changes on every tick — color it
         // gray ("this signal changes regularly") instead of flickering
-        // between the high/low colors.
+        // between the high/low colors. An unstable (oscillating) wire gets
+        // its own distinct color, checked first so it never also matches
+        // high/low/clock.
         const source = App.getControl(wire.fromControlId);
         const isClockSource = Boolean(source && source.type === 'clock');
-        wire.pathEl.classList.toggle('signal-clock', isClockSource);
+        wire.pathEl.classList.toggle('signal-unstable', value === UNSTABLE);
+        wire.pathEl.classList.toggle('signal-clock', isClockSource && value !== UNSTABLE);
         wire.pathEl.classList.toggle('signal-high', !isClockSource && value === 1);
         wire.pathEl.classList.toggle('signal-low', !isClockSource && value === 0);
     });

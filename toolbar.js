@@ -17,7 +17,6 @@ import * as Popups from './popups.js';
 import * as Canvas from './canvas.js';
 
 const host = document.getElementById('paper-host');
-const LOCAL_STORAGE_KEY = 'logic-sim-save';
 
 // ---------------- Zoom ----------------
 
@@ -54,39 +53,15 @@ selectButton.addEventListener('click', () => setTool('select'));
 panButton.addEventListener('click', () => setTool('pan'));
 setTool('select');
 
-// ---------------- Save / Print ----------------
-
-document.getElementById('btn-save').addEventListener('click', () => {
-    const data = {
-        controls: App.allControls().map((control) => ({
-            id: control.id,
-            type: control.type,
-            x: control.x,
-            y: control.y,
-            inputCount: control.inputCount,
-            note: control.note || null,
-        })),
-        wires: App.allWires().map((wire) => ({ from: wire.fromNodeId, to: wire.toNodeId })),
-    };
-    try {
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data));
-    } catch (error) {
-        console.error(`Save failed (localStorage unavailable): ${error}`);
-    }
-});
+// ---------------- Print ----------------
+// Save, and Back/Forward (the "<"/">" buttons, repurposed per the owner's
+// simpler single-save-point design — not a conventional undo/redo stack),
+// are wired up in saveLoad.js instead: they need App, Canvas, Shapes,
+// CustomGates and localStorage all together, which belongs in its own file
+// rather than growing toolbar.js's already-broad "misc button bindings"
+// role further.
 
 document.getElementById('btn-print').addEventListener('click', () => window.print());
-
-// ---------------- Undo / Redo ----------------
-// A history stack isn't implemented: app.js has no command log to replay, so
-// these are stubbed rather than silently doing something misleading.
-
-document.getElementById('btn-undo').addEventListener('click', () => {
-    console.info('Undo: history stack not implemented.');
-});
-document.getElementById('btn-redo').addEventListener('click', () => {
-    console.info('Redo: history stack not implemented.');
-});
 
 // ---------------- Grid toggle ----------------
 // The dot grid is a CSS background on #paper-host (see style.css) rather
