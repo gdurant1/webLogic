@@ -445,7 +445,11 @@ const setWireHitTestable = (link, hitTestable) => {
     // bug found earlier (JointJS reapplies declared attrs on re-render,
     // discarding anything added outside the model). Setting it here means
     // every one of those re-renders reapplies the value I actually want.
-    link.attr('line/class', hitTestable ? 'wire' : 'wire connecting');
+    // Targets `hitArea` (wire-hit-area), not `line`: the invisible, wider
+    // click-target path (correction: easier wire selection) is now the
+    // element with real pointer-events — `.wire`'s own are permanently off
+    // in CSS, since the visible line no longer needs to catch clicks itself.
+    link.attr('hitArea/class', hitTestable ? 'wire-hit-area' : 'wire-hit-area connecting');
 };
 
 graph.on('add', (cell) => {
@@ -476,6 +480,29 @@ export const registerWire = (link) => {
     const to = App.getNode(toNodeId);
     const view = paper.findViewByModel(link);
     if (!view) return;
+
+    // All cells share one SVG layer ordered by insertion/z, not separate
+    // elements/links layers — confirmed directly. A wire is normally
+    // created AFTER the elements it connects, so it would otherwise render
+    // on top of them, including their ports. That's harmless when a port
+    // has no OTHER wire yet, but once a port already has one outgoing wire,
+    // starting a SECOND wire from that same port means clicking exactly
+    // where the first wire's (now wider — correction: easier wire
+    // selection) hit-area already sits, right on top of the port — caught
+    // by testing: a port with an existing wire became impossible to drag a
+    // new connection from at all, elementFromPoint found the wire instead
+    // of the port underneath it. toBack() keeps every wire behind every
+    // element, so ports stay on top and clickable regardless of order.
+    //
+    // Deferred one tick (setTimeout 0), not called synchronously here: this
+    // whole handler runs during JointJS's own arrowhead-connect completion,
+    // which — confirmed by testing, not just assumed — itself bumps the
+    // link's z back up (to maxZ+1, i.e. "bring the just-connected link to
+    // front") sometime after this point in the same synchronous flow. A
+    // synchronous toBack() call right here gets silently overwritten by
+    // that; deferring until the next tick lets JointJS's own bump happen
+    // first, then applies ours after, so it actually sticks.
+    setTimeout(() => link.toBack(), 0);
 
     const wire = {
         id: link.id,

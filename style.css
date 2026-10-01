@@ -359,7 +359,7 @@ summary:focus-visible,
 
 .palette-item:active { cursor: grabbing; }
 
-/* Distinct color coding for Input vs Output controls (colorScheme.md:
+/* Distinct color coding for Input vs Output controls (cssPrompt.md:
    "Teal for inputs, Golden-Yellow for outputs"). This is the only
    place those two tokens are applied — the panel HEADERS keep the
    shared cobalt/purple treatment per the same spec sentence, so the

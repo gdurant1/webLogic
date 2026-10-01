@@ -200,6 +200,12 @@
             <button type="button" id="note-input-count-increase" class="stepper-btn" aria-label="Increase input count">+</button>
         </div>
     </div>
+    <!-- Clock speed (correction): shown only when the note popup's target is
+         a clock control; options populated from Logic.CLOCK_SPEED_PRESETS. -->
+    <div id="note-clock-speed-section" hidden>
+        <label for="note-clock-speed">Clock Speed</label>
+        <select id="note-clock-speed"></select>
+    </div>
 </div>
 
 <!-- Clear All confirmation -->

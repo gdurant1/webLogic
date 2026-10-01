@@ -1,7 +1,7 @@
 /**
  * tables.js — Truth Table Generator
  * ---------------------------------------------------------------------------
- * Per javascript.md §6:
+ * Per jsPrompt.md §6:
  *   - Every logic gate not wired into a bigger circuit gets its own reference
  *     truth table in #truth-tables-list (built from GATE_FUNCS — the gate's
  *     abstract behavior, independent of what is wired to it).
@@ -125,7 +125,7 @@ const hasOutgoingWire = (control) => App.getWiresFromNode(`${control.id}-out`).l
  * "last time" to remember, so an SR latch's table can only show what it
  * does from a cold power-on for each input combination, not which state it
  * would actually be holding on the real canvas — a documented limitation,
- * not a bug (see javascript.md).
+ * not a bug (see jsPrompt.md).
  */
 const readValue = (values, nodeId) => {
     const v = values.get(nodeId);

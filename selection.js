@@ -93,40 +93,78 @@ paper.on('link:pointerclick', (linkView, event) => {
 paper.on('blank:pointerclick', () => App.clearSelection());
 
 // ---------------- Multiselect toggle ----------------
+// Correction: give the active tool a persistent, visible cursor cue
+// (`.tool-multiselect`, see style.css) until the user presses Escape,
+// right-clicks, or picks a different tool — not just while a button is
+// mid-click. `host` here is paper.el (#paper-host) — see getPaperInstance.
+
+const setMultiSelectMode = (enabled) => {
+    multiSelectMode = enabled;
+    if (multiselectButton) multiselectButton.classList.toggle('selected', enabled);
+    // NOT paper.el — that's an inner wrapper div JointJS creates itself
+    // (class "joint-paper", id "paper"), nested INSIDE #paper-host; the CSS
+    // tool-cursor rules (style.css) target #paper-host specifically, same
+    // element toolbar.js's pan-tool cursor already uses. Confirmed directly:
+    // the class was being added to the wrong element, so the multiselect
+    // cursor never actually appeared.
+    document.getElementById('paper-host').classList.toggle('tool-multiselect', enabled);
+};
 
 if (multiselectButton) {
     multiselectButton.addEventListener('click', () => {
-        multiSelectMode = !multiSelectMode;
-        multiselectButton.classList.toggle('selected', multiSelectMode);
+        if (!multiSelectMode) App.emit('tool:cancel'); // disarm any other overlay (e.g. the note tool) first
+        setMultiSelectMode(!multiSelectMode);
     });
 }
+
+App.events.addEventListener('tool:cancel', () => setMultiSelectMode(false));
 
 // ---------------- Rubber-band (paper.findViewsInArea) ----------------
 
 const beginRubberBand = (event) => {
+    // Two separate coordinate systems are needed here, and the old version
+    // of this function conflated them — the actual bug behind "the
+    // multi-select box isn't visible": `bounds` (WORLD/model coordinates,
+    // from clientToLocalPoint) is exactly right for findViewsInArea() below,
+    // but was ALSO being used directly as the visual band's CSS pixel
+    // position. World coordinates only equal screen pixels at exactly 100%
+    // zoom with no pan — any other view state put the band far off in some
+    // unrelated part of the (very large) world, in practice invisible.
+    // `startClient`/a `position: fixed` box track real screen pixels for
+    // the VISUAL overlay instead, independent of pan/zoom entirely; `bounds`
+    // (world space) is kept only for the final hit-test.
     const start = paper.clientToLocalPoint(event.clientX, event.clientY);
+    const startClient = { x: event.clientX, y: event.clientY };
     const additive = event.ctrlKey || event.metaKey;
     const previous = additive ? App.getSelection() : [];
 
     const band = document.createElement('div');
     band.className = 'rubber-band';
-    band.style.left = `${start.x}px`;
-    band.style.top = `${start.y}px`;
-    paper.el.appendChild(band);
+    band.style.left = `${startClient.x}px`;
+    band.style.top = `${startClient.y}px`;
+    document.body.appendChild(band);
 
     let bounds = { x: start.x, y: start.y, width: 0, height: 0 };
     let moved = false;
 
     const onMove = (moveEvent) => {
         const point = paper.clientToLocalPoint(moveEvent.clientX, moveEvent.clientY);
-        const left = Math.min(start.x, point.x);
-        const top = Math.min(start.y, point.y);
-        bounds = { x: left, y: top, width: Math.abs(point.x - start.x), height: Math.abs(point.y - start.y) };
-        if (bounds.width > 2 || bounds.height > 2) moved = true;
-        band.style.left = `${left}px`;
-        band.style.top = `${top}px`;
-        band.style.width = `${bounds.width}px`;
-        band.style.height = `${bounds.height}px`;
+        bounds = {
+            x: Math.min(start.x, point.x),
+            y: Math.min(start.y, point.y),
+            width: Math.abs(point.x - start.x),
+            height: Math.abs(point.y - start.y),
+        };
+
+        const clientLeft = Math.min(startClient.x, moveEvent.clientX);
+        const clientTop = Math.min(startClient.y, moveEvent.clientY);
+        const clientWidth = Math.abs(moveEvent.clientX - startClient.x);
+        const clientHeight = Math.abs(moveEvent.clientY - startClient.y);
+        if (clientWidth > 2 || clientHeight > 2) moved = true;
+        band.style.left = `${clientLeft}px`;
+        band.style.top = `${clientTop}px`;
+        band.style.width = `${clientWidth}px`;
+        band.style.height = `${clientHeight}px`;
     };
 
     const onUp = () => {

@@ -282,32 +282,44 @@ export const scheduleEvaluate = () => {
     });
 };
 
-// ---------------- Shared clock timer ----------------
+// ---------------- Per-clock timer (correction: adjustable clock speed) ----------------
+// Each clock now runs its OWN setInterval at its OWN `halfPeriodMs`, instead
+// of every clock on the canvas sharing one timer at one fixed rate — needed
+// so the user can set each clock's speed independently. Common preset
+// speeds (expressed as the full on/off cycle's frequency; half-period is
+// just period/2) — CLOCK_HALF_PERIOD_MS's old default (800ms, ~0.625 Hz) is
+// kept as the "Default" preset so existing circuits look the same as before.
+export const CLOCK_SPEED_PRESETS = [
+    { label: 'Very Slow (0.25 Hz)', halfPeriodMs: 2000 },
+    { label: 'Slow (0.5 Hz)', halfPeriodMs: 1000 },
+    { label: 'Default (0.625 Hz)', halfPeriodMs: CLOCK_HALF_PERIOD_MS },
+    { label: 'Fast (1 Hz)', halfPeriodMs: 500 },
+    { label: 'Very Fast (2 Hz)', halfPeriodMs: 250 },
+];
 
-let clockTimer = null;
-
-const stopClockTimer = () => {
-    if (clockTimer !== null) {
-        clearInterval(clockTimer);
-        clockTimer = null;
-    }
-};
-
-const tickClocks = () => {
-    const clocks = App.allControls().filter((control) => control.type === 'clock');
-    if (clocks.length === 0) {
-        stopClockTimer();
-        return;
-    }
-    clocks.forEach((clock) => {
-        clock.clockValue = clock.clockValue ? 0 : 1;
-        clock.el.classList.toggle('on', clock.clockValue === 1);
-    });
+const tickOneClock = (clock) => {
+    if (!App.getControl(clock.id)) { stopClockTimer(clock); return; } // removed since the interval was scheduled
+    clock.clockValue = clock.clockValue ? 0 : 1;
+    clock.el.classList.toggle('on', clock.clockValue === 1);
     evaluate();
 };
 
-const ensureClockTimer = () => {
-    if (clockTimer === null) clockTimer = setInterval(tickClocks, CLOCK_HALF_PERIOD_MS);
+const startClockTimer = (clock) => {
+    stopClockTimer(clock);
+    clock.clockTimer = setInterval(() => tickOneClock(clock), clock.halfPeriodMs || CLOCK_HALF_PERIOD_MS);
+};
+
+const stopClockTimer = (clock) => {
+    if (clock.clockTimer !== undefined && clock.clockTimer !== null) {
+        clearInterval(clock.clockTimer);
+        clock.clockTimer = null;
+    }
+};
+
+/** Change one clock's speed (popups.js's speed dropdown). Restarts its timer at the new rate; its current on/off phase is left as-is. */
+export const setClockSpeed = (control, halfPeriodMs) => {
+    control.halfPeriodMs = halfPeriodMs;
+    startClockTimer(control);
 };
 
 // ---------------- Wiring up interactive source controls ----------------
@@ -354,13 +366,15 @@ App.events.addEventListener('control:placed', (event) => {
     if (control.type === 'clock') {
         control.clockValue = 0; // always starts low
         control.el.classList.remove('on');
-        ensureClockTimer();
+        control.halfPeriodMs = control.halfPeriodMs || CLOCK_HALF_PERIOD_MS;
+        startClockTimer(control);
     }
     scheduleEvaluate();
 });
 
-App.events.addEventListener('control:remove', () => {
-    if (!App.allControls().some((control) => control.type === 'clock')) stopClockTimer();
+App.events.addEventListener('control:remove', (event) => {
+    const control = event.detail;
+    if (control.type === 'clock') stopClockTimer(control);
     scheduleEvaluate();
 });
 App.events.addEventListener('wire:add', scheduleEvaluate);

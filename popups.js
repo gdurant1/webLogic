@@ -1,7 +1,7 @@
 /**
  * popups.js — Dialog & Note Handlers
  * ---------------------------------------------------------------------------
- * Per javascript.md §7 / htmlPromptForCSS.md §6:
+ * Per jsPrompt.md §7 / htmlPrompt.md §6:
  *   - #note-popup opens via #btn-note (arm it, then click a control) or by
  *     double-clicking a control. EXCEPTION: a Push Button ignores double-click
  *     (a double-click is two quick presses) and can only open its note

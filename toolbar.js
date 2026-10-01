@@ -1,7 +1,7 @@
 /**
  * toolbar.js — Toolbar Controls, Zoom & Pan
  * ---------------------------------------------------------------------------
- * Per javascript.md §8, with zoom/pan now delegated to canvas.js, which owns
+ * Per jsPrompt.md §8, with zoom/pan now delegated to canvas.js, which owns
  * the JointJS Paper (`paper.scale()` / `paper.translate()`):
  *   - The zoom slider and +/- buttons zoom toward the CENTER of the
  *     viewport (no cursor position to aim at); the mouse wheel — wired up
