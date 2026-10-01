@@ -1,121 +1,58 @@
 /**
  * toolbar.js — Toolbar Controls, Zoom & Pan
  * ---------------------------------------------------------------------------
- * Per javascript.md §8:
- *   - Binds #btn-save, #btn-print, #btn-undo, #btn-redo, #btn-grid,
- *     #btn-select, #btn-pan, #btn-clear-all (via popups.js), #btn-play,
- *     #btn-stop and #btn-help.
- *   - Zoom (#zoom-slider / #btn-zoom-in / #btn-zoom-out, 50%-200% in 10%
- *     steps) scales the WHOLE canvas as one layer: #canvas-world gets a CSS
- *     scale(), and #canvas-sizer is resized so the scrollbars always match
- *     the scaled world. Every control keeps its original size relative to
- *     the others; zooming keeps the middle of the view in place.
- *   - The canvas is a scrollable "infinite" world (WORLD_SIZE px square,
- *     a practical limit). beginPan() scrolls it by dragging; main.js's
- *     mousedown router calls it for a drag on empty space (either tool).
- *     Scrollbars stay visible.
+ * Per javascript.md §8, with zoom/pan now delegated to canvas.js, which owns
+ * the JointJS Paper (`paper.scale()` / `paper.translate()`):
+ *   - The zoom slider and +/- buttons zoom toward the CENTER of the
+ *     viewport (no cursor position to aim at); the mouse wheel — wired up
+ *     in canvas.js — zooms toward the cursor instead. Both go through the
+ *     same `Canvas.zoomTo()` / 10%-step logic, so they always agree.
+ *   - #btn-select / #btn-pan just set which tool a drag on empty canvas
+ *     means (canvas.js's `beginPan` is what actually moves the paper);
+ *     dragging empty space pans with either tool, same as before.
  */
 import * as App from './app.js';
 import * as Logic from './logic.js';
 import * as Popups from './popups.js';
+import * as Canvas from './canvas.js';
 
-const viewport = document.getElementById('canvas');
-const sizer = document.getElementById('canvas-sizer');
-const world = document.getElementById('canvas-world');
-
+const host = document.getElementById('paper-host');
 const LOCAL_STORAGE_KEY = 'logic-sim-save';
-const ZOOM_STEP_PERCENT = 10;
-const PAN_THRESHOLD_PX = 3;
 
-// ---------------- Zoom / viewport ----------------
+// ---------------- Zoom ----------------
 
 const zoomSlider = document.getElementById('zoom-slider');
 
-/** Apply a zoom level (percent), keeping the center of the view fixed. */
-export const applyZoom = (percent) => {
-    const oldZoom = App.getZoom();
-    const centerX = (viewport.scrollLeft + viewport.clientWidth / 2) / oldZoom;
-    const centerY = (viewport.scrollTop + viewport.clientHeight / 2) / oldZoom;
+const syncSlider = () => { zoomSlider.value = String(Canvas.getZoomPercent()); };
 
-    const zoom = App.setZoom(percent / 100);
-    sizer.style.width = `${App.WORLD_SIZE * zoom}px`;
-    sizer.style.height = `${App.WORLD_SIZE * zoom}px`;
-    world.style.transform = `scale(${zoom})`;
+zoomSlider.addEventListener('input', () => Canvas.zoomToPercent(parseInt(zoomSlider.value, 10)));
+document.getElementById('btn-zoom-in').addEventListener('click', () => { Canvas.zoomInStep(); syncSlider(); });
+document.getElementById('btn-zoom-out').addEventListener('click', () => { Canvas.zoomOutStep(); syncSlider(); });
+App.events.addEventListener('zoom:change', syncSlider);
 
-    viewport.scrollLeft = centerX * zoom - viewport.clientWidth / 2;
-    viewport.scrollTop = centerY * zoom - viewport.clientHeight / 2;
-    zoomSlider.value = String(Math.round(zoom * 100));
-};
-
-/** Size the world for the slider's zoom and center the view. Called once by main.js. */
+/** Size and center the initial view. Called once by main.js. */
 export const initViewport = () => {
-    world.style.width = `${App.WORLD_SIZE}px`;
-    world.style.height = `${App.WORLD_SIZE}px`;
-    const percent = parseInt(zoomSlider.value, 10) || 100;
-    const zoom = App.setZoom(percent / 100);
-    sizer.style.width = `${App.WORLD_SIZE * zoom}px`;
-    sizer.style.height = `${App.WORLD_SIZE * zoom}px`;
-    world.style.transform = `scale(${zoom})`;
-    viewport.scrollLeft = (App.WORLD_SIZE * zoom - viewport.clientWidth) / 2;
-    viewport.scrollTop = (App.WORLD_SIZE * zoom - viewport.clientHeight) / 2;
+    Canvas.initViewport();
+    syncSlider();
 };
-
-zoomSlider.addEventListener('input', () => applyZoom(parseInt(zoomSlider.value, 10)));
-document.getElementById('btn-zoom-in').addEventListener('click', () => {
-    applyZoom(parseInt(zoomSlider.value, 10) + ZOOM_STEP_PERCENT);
-});
-document.getElementById('btn-zoom-out').addEventListener('click', () => {
-    applyZoom(parseInt(zoomSlider.value, 10) - ZOOM_STEP_PERCENT);
-});
 
 // ---------------- Select / Pan tool ----------------
 
 const selectButton = document.getElementById('btn-select');
 const panButton = document.getElementById('btn-pan');
-let activeTool = 'select';
 
-export const getActiveTool = () => activeTool;
+export const getActiveTool = () => Canvas.getPanTool();
 
 const setTool = (tool) => {
-    activeTool = tool;
+    Canvas.setPanTool(tool);
     selectButton.classList.toggle('selected', tool === 'select');
     panButton.classList.toggle('selected', tool === 'pan');
-    viewport.style.cursor = tool === 'pan' ? 'grab' : '';
+    host.style.cursor = tool === 'pan' ? 'grab' : '';
 };
 
 selectButton.addEventListener('click', () => setTool('select'));
 panButton.addEventListener('click', () => setTool('pan'));
 setTool('select');
-
-/** Drag-to-pan. Called by main.js's mousedown router. */
-export const beginPan = (event) => {
-    event.preventDefault();
-    const startX = event.clientX;
-    const startY = event.clientY;
-    const startLeft = viewport.scrollLeft;
-    const startTop = viewport.scrollTop;
-    const restCursor = activeTool === 'pan' ? 'grab' : '';
-    let moved = false;
-    viewport.style.cursor = 'grabbing';
-
-    const onMove = (moveEvent) => {
-        const dx = moveEvent.clientX - startX;
-        const dy = moveEvent.clientY - startY;
-        if (Math.hypot(dx, dy) > PAN_THRESHOLD_PX) moved = true;
-        viewport.scrollLeft = startLeft - dx;
-        viewport.scrollTop = startTop - dy;
-    };
-
-    const onUp = () => {
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
-        viewport.style.cursor = restCursor;
-        if (moved) App.swallowNextClick(); // a pan must not clear the selection
-    };
-
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-};
 
 // ---------------- Save / Print ----------------
 
@@ -152,13 +89,16 @@ document.getElementById('btn-redo').addEventListener('click', () => {
 });
 
 // ---------------- Grid toggle ----------------
+// The dot grid is a CSS background on #paper-host (see style.css) rather
+// than a JointJS-rendered grid, so it keeps the exact original look
+// (including the dark-mode color token) — toggling it is just a class.
 
 const gridButton = document.getElementById('btn-grid');
 let gridOn = true;
 
 gridButton.addEventListener('click', () => {
     gridOn = !gridOn;
-    world.style.backgroundImage = gridOn ? '' : 'none';
+    host.classList.toggle('grid-hidden', !gridOn);
     gridButton.classList.toggle('selected', !gridOn);
 });
 
@@ -175,5 +115,42 @@ document.getElementById('btn-stop').addEventListener('click', () => Logic.stop()
 
 document.getElementById('btn-help').addEventListener('click', () => {
     alert('Drag controls and gates from the left panel onto the canvas, wire them together from output to input nodes, ' +
-        'and use the toolbar to select, edit and simulate your circuit. Drag empty space (or use the pan tool) to move around.');
+        'and use the toolbar to select, edit and simulate your circuit. Drag empty space (or use the pan tool) to move around. ' +
+        'Scroll the mouse wheel over the canvas to zoom toward the cursor.');
 });
+
+// ---------------- Theme (dark mode) ----------------
+// Folded in from what used to be a separate theme.js: like the toolbar
+// bindings above, this is just "a status-bar control's click handler plus
+// where its state is kept" — #dark-mode-toggle lives in the same
+// #status-bar as the zoom controls this file already owns, and it shares
+// no state or graph/paper access with anything else, so it didn't need its
+// own file.
+//
+// Toggles `.dark-mode` on <body>; every color in style.css already reads
+// from custom properties, so this one class swap re-themes the entire app.
+// Persisted under the localStorage key "darkMode", read back inside
+// try/catch in case storage is unavailable (private browsing, etc.).
+
+const THEME_STORAGE_KEY = 'darkMode';
+const darkModeToggle = document.getElementById('dark-mode-toggle');
+
+const applyTheme = (isDark) => document.body.classList.toggle('dark-mode', isDark);
+
+darkModeToggle.addEventListener('change', () => {
+    applyTheme(darkModeToggle.checked);
+    try {
+        localStorage.setItem(THEME_STORAGE_KEY, darkModeToggle.checked ? '1' : '0');
+    } catch (error) {
+        // Storage unavailable: the choice just won't survive a reload.
+    }
+});
+
+try {
+    if (localStorage.getItem(THEME_STORAGE_KEY) === '1') {
+        darkModeToggle.checked = true;
+        applyTheme(true);
+    }
+} catch (error) {
+    // Storage unavailable: default to light mode.
+}

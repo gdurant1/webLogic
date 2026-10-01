@@ -4,6 +4,51 @@
     <meta charset="UTF-8">
     <title>Logic Gate Simulator</title>
     <link rel="stylesheet" href="style.css">
+
+    <!--
+      JointJS (open-source core, MPL-2.0 — @joint/core, the maintained
+      successor to the deprecated `jointjs` package; NOT JointJS+/Rappid,
+      which is a separate paid product this app does not use).
+      Lives at ./joint.js, next to index.html. No network access needed —
+      this is a real local file, not a CDN reference.
+    -->
+    <script src="joint.js"></script>
+
+    <!-- Load guard: if joint.js failed to load (missing/renamed/wrong path),
+         `joint` is undefined here. Classic inline script, so it runs even
+         though every ES module below depends on `joint` and will otherwise
+         fail silently with no visible sign anything is wrong. -->
+    <script>
+        if (typeof joint === 'undefined') {
+            console.error('JointJS failed to load: expected ./joint.js next to index.html.');
+            document.addEventListener('DOMContentLoaded', function () {
+                var banner = document.createElement('div');
+                banner.textContent = 'JointJS failed to load — expected at joint.js, next to index.html. The simulator cannot run until that file is restored.';
+                banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;' +
+                    'background:#b00020;color:#fff;font:600 14px/1.4 system-ui,sans-serif;' +
+                    'padding:10px 16px;text-align:center;';
+                document.body.prepend(banner);
+            });
+        }
+    </script>
+
+    <!-- Font: local-first. The font stack is 'JetBrains Mono', 'Courier New',
+         monospace, so an installed copy of JetBrains Mono (or the system
+         monospace fallback) needs no network request at all. Only if the
+         font genuinely isn't installed does this inject one request to
+         Google Fonts as a last-resort fallback. -->
+    <script>
+        (function () {
+            var hasFont = false;
+            try { hasFont = !!(document.fonts && document.fonts.check("12px 'JetBrains Mono'")); } catch (e) { /* no FontFaceSet API: stay offline, skip the fallback */ }
+            if (!hasFont) {
+                var link = document.createElement('link');
+                link.rel = 'stylesheet';
+                link.href = 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap';
+                document.head.appendChild(link);
+            }
+        })();
+    </script>
 </head>
 <body>
 
@@ -12,45 +57,38 @@
     <div class="header-side"></div>
     <div id="logo">Logic Gate Simulator</div>
     <div class="header-side" id="header-right">
-        <div id="account">
-            <button type="button" id="btn-login">Sign In</button>
-        </div>
-        <button type="button" id="btn-lonly" title="Lonly?">Lonly?</button>
         <button type="button" id="close-btn">&times;</button>
     </div>
 </header>
 
-<!-- Circuit tabs -->
-<div id="tabs">
-    <div class="tab active">
-        <input type="text" class="tab-name-input" value="Main" aria-label="Project name">
-        <span class="tab-close" title="Close tab">&times;</span>
-    </div>
-    <button type="button" id="add-tab">+</button>
-</div>
+<!-- Project title bar: plain, non-interactive (single canvas, no tabs). -->
+<div id="project-title">Main</div>
 
-<!-- Toolbar -->
+<!-- Toolbar (centered as a group — see #toolbar in style.css) -->
 <div id="toolbar">
-    <button type="button" id="btn-save" title="Save">save</button>
-    <button type="button" id="btn-print" title="Print">print</button>
-    <button type="button" id="btn-clear-all" title="Clear All">clear-all</button>
-    <button type="button" id="btn-undo" title="Undo">&lt;</button>
-    <button type="button" id="btn-redo" title="Redo">&gt;</button>
-    <button type="button" id="btn-select" title="Select">select</button>
-    <button type="button" id="btn-pan" title="Pan">pan</button>
-    <button type="button" id="btn-play" title="Play: cycle through every input/output combination on the canvas">&#9654;</button>
-    <button type="button" id="btn-stop" title="Stop">&#9632;</button>
-    <button type="button" id="btn-multiselect" title="Multi-select">multiselect</button>
-    <button type="button" id="btn-cut" title="Cut">cut</button>
-    <button type="button" id="btn-copy" title="Copy">copy</button>
-    <button type="button" id="btn-paste" title="Paste">paste</button>
-    <button type="button" id="btn-delete" title="Delete">delete</button>
-    <button type="button" id="btn-flip-h" title="Flip Horizontal">flip-h</button>
-    <button type="button" id="btn-flip-v" title="Flip Vertical">flip-v</button>
-    <button type="button" id="btn-group" title="Group">group</button>
-    <button type="button" id="btn-grid" title="Grid">grid</button>
-    <button type="button" id="btn-note" title="Add note">&#9998;</button>
-    <button type="button" id="btn-help" title="Help">?</button>
+    <div id="toolbar-group">
+        <button type="button" id="btn-save" title="Save">save</button>
+        <button type="button" id="btn-print" title="Print">print</button>
+        <button type="button" id="btn-clear-all" title="Clear All">clear-all</button>
+        <button type="button" id="btn-undo" title="Back to last save">&lt;</button>
+        <button type="button" id="btn-redo" title="Forward">&gt;</button>
+        <button type="button" id="btn-select" title="Select">select</button>
+        <button type="button" id="btn-pan" title="Pan">pan</button>
+        <button type="button" id="btn-play" title="Play: cycle through every input/output combination on the canvas">&#9654;</button>
+        <button type="button" id="btn-stop" title="Stop">&#9632;</button>
+        <button type="button" id="btn-multiselect" title="Multi-select">multiselect</button>
+        <button type="button" id="btn-cut" title="Cut">cut</button>
+        <button type="button" id="btn-copy" title="Copy">copy</button>
+        <button type="button" id="btn-paste" title="Paste">paste</button>
+        <button type="button" id="btn-delete" title="Delete">delete</button>
+        <button type="button" id="btn-flip-h" title="Flip Horizontal">flip-h</button>
+        <button type="button" id="btn-flip-v" title="Flip Vertical">flip-v</button>
+        <button type="button" id="btn-group" title="Group">group</button>
+        <button type="button" id="btn-create-gate" title="Create a custom gate from the selected circuit">create gate</button>
+        <button type="button" id="btn-grid" title="Grid">grid</button>
+        <button type="button" id="btn-note" title="Add note">&#9998;</button>
+        <button type="button" id="btn-help" title="Help">?</button>
+    </div>
 </div>
 
 <!-- Main body -->
@@ -93,26 +131,22 @@
             </div>
         </section>
 
+        <!-- Custom gates created with "create gate" — populated by customGates.js,
+             both at startup (from localStorage) and whenever a new one is made. -->
+        <section class="panel" id="custom-gates">
+            <h3>Custom Gates</h3>
+            <div class="panel-items" id="custom-gates-items">
+                <!-- <div class="palette-item custom-gate-item" draggable="true" data-type="custom:<id>">Name</div> -->
+            </div>
+        </section>
+
     </aside>
 
-    <!-- Canvas / workspace -->
+    <!-- Canvas / workspace: JointJS renders its own <svg> inside #paper-host.
+         The dot grid is a CSS background on #paper-host itself (see
+         style.css), so it keeps the original look including dark mode. -->
     <div id="canvas-wrapper">
-        <!-- #canvas is the scrolling viewport of an "infinite" world.
-             #canvas-sizer is resized by JS to (world size x zoom) so the
-             scrollbars match; #canvas-world holds the controls and the wire
-             layer at unscaled size and is scaled as ONE layer by zoom. -->
-        <div id="canvas">
-            <div id="canvas-sizer">
-                <div id="canvas-world">
-                    <!-- gates/controls dropped here by JS, as clones of the
-                         <template>s below -->
-                    <svg id="wire-layer">
-                        <!-- JS draws a pair of <path>s (outline + colored wire)
-                             per connection here, on top of the controls/gates -->
-                    </svg>
-                </div>
-            </div>
-        </div>
+        <div id="paper-host"></div>
     </div>
 
     <!-- Right side: Truth Tables -->
@@ -138,86 +172,14 @@
 
 </div>
 
-<!-- Canvas control templates -->
-<template id="tpl-toggle-switch">
-    <div class="control toggle-switch" data-type="toggle-switch">
-        <label class="switch-body">
-            <input type="checkbox" class="switch-input">
-            <span class="switch-track"><span class="switch-knob"></span></span>
-        </label>
-        <span class="node node-out"></span>
-    </div>
-</template>
-
-<template id="tpl-push-button">
-    <div class="control push-button" data-type="push-button">
-        <button type="button" class="push-button-face">
-            <span class="push-button-inner"></span>
-        </button>
-        <span class="node node-out"></span>
-    </div>
-</template>
-
-<template id="tpl-clock">
-    <div class="control clock" data-type="clock">
-        <span class="clock-face"><span class="clock-indicator"></span></span>
-        <span class="node node-out"></span>
-    </div>
-</template>
-
-<template id="tpl-high-constant">
-    <div class="control high-constant" data-type="high-constant">
-        <span class="constant-face">1</span>
-        <span class="node node-out"></span>
-    </div>
-</template>
-
-<template id="tpl-low-constant">
-    <div class="control low-constant" data-type="low-constant">
-        <span class="constant-face">0</span>
-        <span class="node node-out"></span>
-    </div>
-</template>
-
-<template id="tpl-light-bulb">
-    <div class="control light-bulb" data-type="light-bulb">
-        <span class="bulb-stack">
-            <span class="bulb-glass"><span class="bulb-filament"></span></span>
-            <span class="bulb-base"></span>
-        </span>
-        <!-- input node sits centered BELOW the bulb; data-side tells wires.js
-             the wire enters vertically (from below) instead of from the left -->
-        <span class="node node-in unattached" data-side="bottom"></span>
-    </div>
-</template>
-
-<template id="tpl-four-bit-digit">
-    <div class="control four-bit-digit" data-type="four-bit-digit">
-        <span class="digit-nodes">
-            <!-- index 0 = top node, per spec -->
-            <span class="node node-in unattached" data-bit="0"></span>
-            <span class="node node-in unattached" data-bit="1"></span>
-            <span class="node node-in unattached" data-bit="2"></span>
-            <span class="node node-in unattached" data-bit="3"></span>
-        </span>
-        <span class="digit-display">0</span>
-    </div>
-</template>
-
-<template id="tpl-logic-gate">
-    <div class="control logic-gate" data-type="">
-        <span class="gate-inputs"><!-- JS-populated .node.node-in rows --></span>
-        <span class="gate-body"></span>
-        <span class="node node-out"></span>
-    </div>
-</template>
-
-<!-- Bottom status/playback bar -->
+<!-- Bottom status/playback bar (zoom cluster centered — see #status-bar in style.css) -->
 <footer id="status-bar">
     <span id="status-dot"></span>
-    <button type="button" id="btn-zoom-out" title="Zoom out">zoom-out</button>
-    <input type="range" id="zoom-slider" min="50" max="200" step="10" value="100">
-    <button type="button" id="btn-zoom-in" title="Zoom in">zoom-in</button>
+    <div id="zoom-group">
+        <button type="button" id="btn-zoom-out" title="Zoom out">zoom-out</button>
+        <input type="range" id="zoom-slider" min="50" max="200" step="10" value="100">
+        <button type="button" id="btn-zoom-in" title="Zoom in">zoom-in</button>
+    </div>
     <label id="dark-mode-switch" for="dark-mode-toggle">
         Dark Mode
         <input type="checkbox" id="dark-mode-toggle">
@@ -240,35 +202,11 @@
     </div>
 </div>
 
-<!-- Standalone gate input-count popup -->
-<div id="input-count-popup" hidden>
-    <div class="popup-titlebar">
-        <span class="popup-brand">logic.ly</span>
-        <button type="button" id="input-count-close" class="popup-close" aria-label="Close">&times;</button>
-    </div>
-    <div class="popup-body">
-        <h4 id="input-count-gate-name">Gate Name</h4>
-        <label for="input-count">Input Count</label>
-        <div class="stepper">
-            <button type="button" id="input-count-decrease" class="stepper-btn" aria-label="Decrease input count">&minus;</button>
-            <input type="number" id="input-count" min="1" value="2">
-            <button type="button" id="input-count-increase" class="stepper-btn" aria-label="Increase input count">+</button>
-        </div>
-    </div>
-</div>
-
 <!-- Clear All confirmation -->
 <div id="clear-all-confirm" hidden>
     <p>Erase everything on the canvas?</p>
     <button type="button" id="clear-all-yes">Yes</button>
     <button type="button" id="clear-all-no">No</button>
-</div>
-
-<!-- Lonly? prompt -->
-<div id="lonly-prompt" hidden>
-    <p>Do you want to meet Someone?</p>
-    <button type="button" id="lonly-yes">Yes</button>
-    <button type="button" id="lonly-no">No</button>
 </div>
 
 <!-- Limit / warning dialog (drawn by popups.js for limits.js) -->
@@ -281,7 +219,46 @@
     </div>
 </div>
 
-<!-- Application entry point: main.js imports every other module -->
+<!-- Create Gate: name prompt -->
+<div id="create-gate-name-popup" hidden>
+    <p>Name this custom gate:</p>
+    <input type="text" id="create-gate-name-input" maxlength="40">
+    <div class="popup-actions">
+        <button type="button" id="create-gate-name-cancel">Cancel</button>
+        <button type="button" id="create-gate-name-confirm">Create</button>
+    </div>
+</div>
+
+<!-- Create Gate: remove-originals confirmation (asked after a successful create) -->
+<div id="create-gate-remove-confirm" hidden>
+    <p>Remove the original gates from the canvas?</p>
+    <button type="button" id="create-gate-remove-yes">Yes</button>
+    <button type="button" id="create-gate-remove-no">No</button>
+</div>
+
+<!-- Create Gate: plain info/alert message (invalid selection, duplicate found) -->
+<div id="custom-gate-message" hidden role="alertdialog" aria-describedby="custom-gate-message-text">
+    <p id="custom-gate-message-text"></p>
+    <button type="button" id="custom-gate-message-ok">OK</button>
+</div>
+
+<!-- Custom gate: read-only view of its captured internal configuration -->
+<div id="custom-gate-view" hidden>
+    <h4 id="custom-gate-view-title">Custom Gate</h4>
+    <div id="custom-gate-view-body"></div>
+    <button type="button" id="custom-gate-view-close">Close</button>
+</div>
+
+<!-- Custom gate: delete confirmation (removes the definition AND every placed instance) -->
+<div id="custom-gate-delete-confirm" hidden>
+    <p id="custom-gate-delete-text"></p>
+    <button type="button" id="custom-gate-delete-yes">Yes, delete</button>
+    <button type="button" id="custom-gate-delete-no">Cancel</button>
+</div>
+
+<!-- Application entry point: main.js imports every other module.
+     shapes.js is imported by main.js's dependency chain (via canvas.js),
+     not loaded separately here. -->
 <script type="module" src="main.js"></script>
 
 </body>

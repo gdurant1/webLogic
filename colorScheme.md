@@ -1,9 +1,16 @@
 # Logic Circuit Design System - Color Scheme
 
-> Matches the current `style.css` / `index.html` (those two files are the
-> source of truth; this document follows them). Every token below is a real
-> CSS custom property defined in `style.css`'s `:root` block. The dating-sim
-> page has its own separate palette — see the last section.
+> Matches the current `style.css` / `index.html` / `shapes.js` (these files
+> are the source of truth; this document follows them). Every token below is
+> a real CSS custom property defined in `style.css`'s `:root` block.
+>
+> **Rendering change (JointJS rewrite):** gates/controls/wires on the canvas
+> are now JointJS SVG shapes (see `shapes.js`), not HTML boxes — so their
+> color rules use SVG presentation properties (`fill`/`stroke`) instead of
+> `background`/`border`, but they read the exact same custom properties as
+> before. The **palette items** in the left panel are unchanged plain HTML
+> with baked-hex `background-image` icons (see the dark-mode note below) —
+> only the versions dropped onto the canvas changed.
 
 ## Light mode (default)
 
@@ -14,45 +21,50 @@
 | `--color-header-text` | `#f8f9fa` | Header text |
 | `--color-toolbar-bg` | `#343a40` | `#tabs`, `#toolbar`, `#status-bar` |
 | `--color-toolbar-text` | `#f8f9fa` | Toolbar/status text |
-| `--color-canvas-bg` | `#f4f5f7` | `#canvas` (the scrolling viewport) background |
-| `--color-grid-dot` | `rgba(33,37,41,0.14)` | Dot grid, drawn on `#canvas-world` so it pans and zooms with the content |
-| `--color-gate-bg` | `#ffffff` | Gate/control body fill |
-| `--color-gate-border` | `#212529` | Gate/control outlines, node rings, wire outline, default wire color |
+| `--color-canvas-bg` | `#f4f5f7` | `#paper-host` (the JointJS Paper's container) background |
+| `--color-grid-dot` | `rgba(33,37,41,0.14)` | Dot grid, a CSS background on `#paper-host` itself (not JointJS's own grid renderer), so it's always directly behind the paper regardless of pan/zoom |
+| `--color-gate-bg` | `#ffffff` | Gate/control body `fill` |
+| `--color-gate-border` | `#212529` | Gate/control `stroke`, node ring `stroke`, wire-outline `stroke`, default wire `stroke` |
 | `--color-true` | `#ff6f00` (bright orange) | Signal = 1 / High |
 | `--color-false` | `#5c6b73` (blue-gray, reasonable-guess shade) | Dark-mode toggle "off" track |
-| `--color-error` | `#ff1744` (bright neon red) | Rejected drop flash, DIRE warning dialog |
+| `--color-error` | `#ff1744` (bright neon red) | DIRE warning dialog |
 | `--color-input` | `#008080` (teal, reasonable-guess shade) | Top accent border on `#input-controls .palette-item`; notice-level dialog accent |
 | `--color-output` | `#ffc107` (golden-yellow, reasonable-guess shade) | Top accent border on `#output-controls .palette-item`; also reused as `--color-focus` |
 | `--color-panel-header-bg` | `#191970` (dark cobalt/purple) | `.panel h3`, popup title bars |
 | `--color-panel-header-text` | `#ffffff` | Panel header text |
 | `--color-panel-bg` | `#d0e1fd` (pale cornflower blue) | `.panel-items`, `#truth-tables-list` backgrounds |
-| `--color-node-unattached` | `#2e7d32` (green) | `.node-in.drop-target` only: the live "you can drop here" cue while a wire is being dragged |
-| `--color-selected` | `#2979ff` (blue) | Outline on a selected `.control` or `.wire`; rubber-band box |
-| `--color-wire` | `var(--color-gate-border)` | Default wire color |
+| `--color-node-unattached` | `#2e7d32` (green) | Reserved for a live "you can drop here" cue on an unoccupied input node — not currently applied (see the node-states note below) |
+| `--color-selected` | `#2979ff` (blue) | `stroke` on a selected control's body / a selected wire; rubber-band box |
+| `--color-wire` | `var(--color-gate-border)` | Default wire `stroke` |
 | `--color-wire-clock` | `#9e9e9e` | A wire carrying a Clock's output (`.signal-clock`) |
-| `--color-signal-on` | `var(--color-true)` | Toggle/push-button/constant/clock/bulb "on" face |
-| `--color-signal-off` | `#ffffff` | Same controls' "off" face; low (0) wires |
-| `--color-stepper` / `--color-stepper-hover` | `#1a8f8f` / `#147373` | The input-count `+` / `-` stepper buttons |
+| `--color-signal-on` | `var(--color-true)` | Toggle/push-button/constant/clock/bulb "on" fill |
+| `--color-signal-off` | `#ffffff` | Same controls' "off" fill; low (0) wires |
+| `--color-stepper` / `--color-stepper-hover` | `#1a8f8f` / `#147373` | The input-count `+` / `-` stepper buttons (plain HTML, embedded in `#note-popup`) |
 | `--color-bg` / `--color-text` / `--color-border` | `#ffffff` / `#212529` / `#ccc` | Generic page neutrals |
-| `--node-stub` | `8px` | Length of the connector line between a node and its body (not a color) |
 
-`--color-collapse-accent` / `-hover` were removed together with the side-panel
-collapse buttons. The stepper buttons had been sharing those values, so they
-were renamed `--color-stepper` / `--color-stepper-hover` (same colors).
+**Node color states — changed in the JointJS rewrite.** Nodes (ports) stay
+plain white/dark-outline (`--color-gate-bg`/`--color-gate-border`) at rest.
+The old `.drop-target` (green, while dragging a wire toward an open input)
+and `.reject-flash` (red, on a rejected drop) cues are **not currently
+wired up**: JointJS's own `validateConnection` now refuses an invalid
+connection outright while dragging, rather than allowing the drop and then
+flashing a rejection after the fact, so there is no longer a moment where
+those classes would apply. The CSS rules for both (`.node-in.drop-target`,
+`.node.reject-flash`) are left in `style.css` in case live drag-highlighting
+is added back later, but nothing currently applies them.
 
 **Note on input/output color-coding:** "Teal for inputs, Golden-Yellow for
-outputs" is applied to the **palette items** (a colored top border), not to
-the section headers, which share the cobalt/purple treatment. Nodes on the
-canvas stay plain white/dark-outline at rest. Only two things recolor a node:
-`.drop-target` (green, while a wire is being dragged, and only for input
-nodes that have no wire yet) and `.reject-flash` (red, for 0.3 s after a
-rejected drop).
+outputs" is applied to the **palette items** (a colored top border, plain
+HTML/CSS, unchanged by the rewrite), not to the section headers, which share
+the cobalt/purple treatment.
 
 ## Wire colors
 
-Each wire is two stacked `<path>`s in `#wire-layer`: a thicker
-`.wire-outline` (`--color-gate-border`) underneath and the colored `.wire` on
-top, so a white (low) wire stays visible against the canvas.
+Each wire is a JointJS `Wire` link (see `shapes.js`) whose markup is two
+stacked `<path>`s: a thicker `.wire-outline` (`--color-gate-border`)
+underneath and the colored `.wire` on top, so a white (low) wire stays
+visible against the canvas — same visual as before, just rendered by
+JointJS's link view instead of hand-drawn SVG.
 
 | State | Color |
 |---|---|
@@ -61,15 +73,21 @@ top, so a white (low) wire stays visible against the canvas.
 | floating (Tri-State disabled) / no signal | no signal class: `--color-wire` |
 | driven by a Clock | `--color-wire-clock` (gray) |
 | selected | `--color-selected`, thicker |
-| being dragged (`.pending`) | dashed `--color-gate-border` |
+
+The old dashed `.wire.pending` preview (while a wire was still being
+dragged) isn't implemented for the JointJS version — the in-progress link
+JointJS draws during a drag renders with the `Wire` type's normal colors
+from the start, rather than a separate dashed style. Worth adding back if
+the plain look during a drag reads as confusing in testing.
 
 ## Dark mode — "Tokyo Night"
 
 Inspired by the lights of downtown Tokyo after dark: deep dark-blue tones
 with vibrant neon accents. Applied by JS adding a `dark-mode` class to
-`<body>` (via `#dark-mode-toggle`, remembered in `localStorage`). Because
-every rule in `style.css` reads from the tokens above, overriding them under
-`body.dark-mode` re-themes the entire app.
+`<body>` (via `#dark-mode-toggle`, remembered in `localStorage`; this logic
+now lives in `toolbar.js`, folded in from the old separate `theme.js`).
+Because every rule in `style.css` reads from the tokens above, overriding
+them under `body.dark-mode` re-themes the entire app.
 
 | Token | Dark value |
 |---|---|
@@ -97,10 +115,17 @@ every rule in `style.css` reads from the tokens above, overriding them under
 | `--color-selected` | `#c0caf5` |
 | `--color-wire-clock` | `#565f89` |
 
-**Known limitation:** `--color-gate-bg` is intentionally left un-overridden
-(stays white) because the gate/palette icons are literal-hex inline SVG data
-URIs that can't read CSS variables. They stay white on the dark canvas by
-design; a true dark icon set would need a second batch of hand-authored SVGs.
+**Improved by the JointJS rewrite:** gate bodies on the canvas are now real
+`<path>` elements styled with `fill: var(--color-gate-bg)` / `stroke:
+var(--color-gate-border)`, so they now correctly re-theme in dark mode.
+
+**Known limitation, unchanged:** the **left-panel palette items'**
+`--icon` thumbnails are still literal-hex inline SVG `background-image` data
+URIs (white fill / dark stroke, baked in at authoring time) — CSS custom
+properties can't reach inside a data URI, so those specific icons stay
+white-on-dark-outline in dark mode too, by design (a "chip on a dark canvas"
+look). A true dark icon set for the palette would need a second,
+hand-authored batch of those same SVGs.
 
 ## Limit / warning dialog (`#limit-popup`)
 
@@ -112,9 +137,3 @@ oversized-truth-table prompt. JS sets a severity class on it:
 | `limit-notice` | `--color-input` | Simulator ~20% slower |
 | `limit-warning` | `--color-true` | Gate limit, ~35% slower, big table |
 | `limit-dire` | `--color-error` (title, border, glow and confirm button too) | ~50% slower or worse |
-
-## Dating-sim page
-
-`datingSimStyle.css` has its **own placeholder palette** (`--ds-*` tokens) and
-does not use `style.css`. Its values are placeholders until the game's art
-direction is decided.

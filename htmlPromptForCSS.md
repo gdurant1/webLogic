@@ -11,7 +11,6 @@ Left to right:
 - `#logo` ("Logic Gate Simulator")
 - `.header-side#header-right`, right-aligned:
   - `#account` wrapping `#btn-login` ("Sign In")
-  - `#btn-lonly` ("Lonly?" — the spelling is intentional; opens the dating-sim page)
   - `#close-btn` (×)
 
 There is no `#menu` nav, `#doc-title` or "Guest" name stack.
@@ -114,8 +113,7 @@ All are centered, fixed, and dim the page with a `body:has(...)::before` backdro
   Opens with the ✎ tool then a click, or by double-click on any control
   **except the Push Button**, which opens only through ✎.
 - `#input-count-popup` — count-only alternative; no trigger assigned yet.
-- `#clear-all-confirm`, `#lonly-prompt` ("Lonly? → Yes" opens
-  `datingSimIndex.html` in a **new tab**).
+- `#clear-all-confirm` — Yes / No confirmation before erasing the canvas.
 - `#limit-popup` — shared warning dialog (title, message, cancel/confirm)
   with a severity class: `limit-notice`, `limit-warning`, `limit-dire`.
 - `#login-popup` is styled in the CSS but has no markup yet.

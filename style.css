@@ -11,14 +11,12 @@
    - Dark mode is NOT implemented here. JS is expected to toggle a
      class (e.g. "dark-mode") on <body>; no rules react to it yet —
      that pass is intentionally left for later.
-   - #note-popup / #input-count-popup / #clear-all-confirm /
-     #lonly-prompt / #limit-popup / #game-container get a dimmed backdrop via
+   - #note-popup / #clear-all-confirm / #limit-popup get a dimmed backdrop via
      body::before + :has(), which needs a fairly modern browser
      (Chrome/Edge/Safari current; Firefox 121+). No HTML changes
      were made to add a dedicated backdrop element.
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
 /* ---------- Design tokens ---------- */
 :root {
@@ -225,53 +223,6 @@ summary:focus-visible,
     text-align: center;
 }
 
-#account {
-    display: flex;
-    align-items: center;
-    flex: 0 0 auto;
-}
-
-/* "Login style" button: looks like a compact sign-in control.
-   Clicking it is expected to open #login-popup (see popups
-   section) — wiring that up is a JS task. */
-#btn-login {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: transparent;
-    border: 1px solid currentColor;
-    border-radius: 3px;
-    padding: 5px 12px;
-    font-size: 0.8rem;
-    font-weight: 600;
-}
-
-#btn-login::before {
-    content: "";
-    width: 14px;
-    height: 14px;
-    background-color: currentColor;
-    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4 20c0-4.4 3.6-7 8-7s8 2.6 8 7'/%3E%3C/svg%3E");
-    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4 20c0-4.4 3.6-7 8-7s8 2.6 8 7'/%3E%3C/svg%3E");
-    -webkit-mask-repeat: no-repeat;
-    mask-repeat: no-repeat;
-    -webkit-mask-size: contain;
-    mask-size: contain;
-}
-
-#btn-login:hover { background: rgba(255, 255, 255, 0.12); }
-
-#btn-lonly {
-    background: transparent;
-    border: 1px solid currentColor;
-    border-radius: 3px;
-    padding: 5px 8px;
-    font-size: 0.7rem;
-    flex: 0 0 auto;
-}
-
-#btn-lonly:hover { background: rgba(255, 255, 255, 0.12); }
-
 #close-btn {
     flex: 0 0 auto;
     background: transparent;
@@ -285,85 +236,20 @@ summary:focus-visible,
 #close-btn:hover { background: rgba(255, 255, 255, 0.15); }
 
 /* ============================================================
-   2. #tabs
+   2. #project-title — plain, non-interactive (single canvas, no tabs)
    ============================================================ */
-#tabs {
+#project-title {
     flex: 0 0 auto;
+    height: 34px;
     display: flex;
     align-items: center;
-    gap: 4px;
-    height: 34px;
-    padding: 0 8px;
+    padding: 0 14px;
     background: var(--color-toolbar-bg);
     color: var(--color-toolbar-text);
     border-bottom: 1px solid var(--color-border);
+    font-weight: 600;
+    font-size: 0.85rem;
 }
-
-.tab {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 3px 3px 0 0;
-    padding: 4px 8px 4px 12px;
-    color: inherit;
-}
-
-.tab.active {
-    background: var(--color-canvas-bg);
-    color: var(--color-text);
-}
-
-/* Editable project-name field, replacing the old plain-text
-   tab label. Sized to content with a generous cap; JS decides
-   what "Main" becomes once the user renames it. */
-.tab-name-input {
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 3px;
-    padding: 2px 4px;
-    width: 9ch;
-    max-width: 22ch;
-    color: inherit;
-}
-
-.tab-name-input:hover,
-.tab-name-input:focus {
-    border-color: var(--color-border);
-    background: rgba(255, 255, 255, 0.5);
-}
-
-.tab.active .tab-name-input:hover,
-.tab.active .tab-name-input:focus {
-    background: var(--color-bg);
-}
-
-.tab-close {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    border-radius: 2px;
-}
-
-.tab-close:hover { background: rgba(0, 0, 0, 0.15); }
-
-#add-tab {
-    width: 24px;
-    height: 24px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: 1px dashed currentColor;
-    border-radius: 3px;
-    color: inherit;
-    padding: 0;
-}
-
-#add-tab:hover { background: rgba(255, 255, 255, 0.12); }
 
 /* ============================================================
    3. #toolbar
@@ -371,14 +257,23 @@ summary:focus-visible,
 #toolbar {
     flex: 0 0 auto;
     display: flex;
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: 4px;
+    justify-content: center;
     padding: 6px 8px;
     background: var(--color-toolbar-bg);
     color: var(--color-toolbar-text);
     border-bottom: 1px solid var(--color-border);
     overflow-x: auto;
+}
+
+/* The buttons themselves stay a left-to-right row; #toolbar centers this
+   row as a whole within the bar rather than spreading individual buttons
+   out, so the group reads as one block regardless of window width. */
+#toolbar-group {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 4px;
+    margin: 0 auto;
 }
 
 #toolbar button {
@@ -479,6 +374,35 @@ summary:focus-visible,
     border-top: 3px solid var(--color-output);
 }
 
+/* Custom gates (see customGates.js): same palette-item look, a blue accent
+   to set them apart from the built-in gates, plus a small delete (x) in the
+   corner — deleting removes the definition AND every placed instance. */
+#custom-gates .palette-item {
+    border-top: 3px solid var(--color-selected);
+    position: relative;
+}
+
+.custom-gate-delete,
+.custom-gate-info {
+    position: absolute;
+    top: 2px;
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 50%;
+    font-size: 0.7rem;
+    padding: 0;
+}
+.custom-gate-delete { right: 2px; }
+.custom-gate-info { right: 20px; }
+.custom-gate-delete:hover { background: var(--color-error); color: #fff; }
+.custom-gate-info:hover { background: var(--color-selected); color: #fff; }
+
 /* --- 4b: canvas area --- */
 #canvas-wrapper {
     flex: 1 1 auto;
@@ -490,50 +414,48 @@ summary:focus-visible,
     overflow: hidden;
 }
 
-/* The canvas is a scrolling viewport onto a large "infinite" world
-   (WORLD_SIZE in app.js, a practical limit). Scrollbars stay visible.
-   - #canvas         the scroll viewport (this box)
-   - #canvas-sizer   resized by JS to (world size x zoom) so the scrollbars
-                     match the zoomed world; clips the scaled world exactly
-   - #canvas-world   holds controls + wire layer at UNSCALED size and is
-                     scaled as ONE layer by zoom, so every control keeps its
-                     original size relative to the others. The dot grid lives
-                     here so it pans and zooms with the content. */
-#canvas {
+/* #paper-host is where JointJS mounts its own <svg> (the Paper). It is an
+   "infinite" world (WORLD_SIZE in app.js, a practical limit) that canvas.js
+   pans and zooms via paper.translate()/paper.scale() — JointJS's own pan/
+   zoom primitives — instead of a hand-built scrolling div, so there is no
+   separate #canvas/#canvas-sizer/#canvas-world nesting any more and no
+   scrollbars (dragging empty space, the pan tool, or the mouse wheel move
+   the view instead). The dot grid is drawn here as a CSS background rather
+   than by JointJS's own grid renderer, so it keeps the original look
+   (including the dark-mode color token) and the #btn-grid toggle is just a
+   class. */
+#paper-host {
     flex: 1 1 auto;
     position: relative;
     margin: 12px;
-    overflow: auto;
-    background-color: var(--color-canvas-bg);
-    border: 2px solid var(--color-gate-border);
-    border-radius: 4px;
-}
-
-#canvas-sizer {
-    position: relative;
     overflow: hidden;
-}
-
-#canvas-world {
-    position: absolute;
-    top: 0;
-    left: 0;
-    transform-origin: 0 0;
+    background-color: var(--color-canvas-bg);
     background-image: radial-gradient(var(--color-grid-dot) 1.5px, transparent 1.5px);
     background-size: 20px 20px;
+    border: 2px solid var(--color-gate-border);
+    border-radius: 4px;
+    cursor: default;
 }
 
-/* The wire layer fills the whole world (which JS sizes to WORLD_SIZE), so
-   wire coordinates are simply world coordinates. Only the individual .wire
-   paths (below) receive the mouse. */
-#wire-layer {
+/* The Paper's own element: fills #paper-host exactly, out of flex flow, so
+   JointJS's inline 100% sizing can never fight the flex layout. */
+#paper {
     position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    overflow: visible;
+    inset: 0;
+}
+
+#paper-host.grid-hidden {
+    background-image: none;
+}
+
+/* Rubber-band multi-select box, drawn directly into the Paper's own element
+   (see selection.js) — paper.el is the same #paper-host div. */
+.rubber-band {
+    position: absolute;
+    z-index: 50;
     pointer-events: none;
+    border: 1px dashed var(--color-selected);
+    background: rgba(41, 121, 255, 0.12);
 }
 
 /* --- 4c: truth tables panel & content --- */
@@ -597,6 +519,7 @@ summary:focus-visible,
    ============================================================ */
 #status-bar {
     flex: 0 0 auto;
+    position: relative;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -606,6 +529,18 @@ summary:focus-visible,
     color: var(--color-toolbar-text);
     border-top: 1px solid var(--color-border);
     font-size: 0.78rem;
+}
+
+/* Centered within the status bar as a whole (absolute + transform, since
+   #status-dot on the left and Dark Mode on the right — margin-left: auto —
+   already claim the flex row's normal space). */
+#zoom-group {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
 #status-bar button {
@@ -704,12 +639,14 @@ summary:focus-visible,
    6. Popups / dialogs
    ============================================================ */
 #note-popup,
-#input-count-popup,
 #clear-all-confirm,
-#lonly-prompt,
 #login-popup,
 #limit-popup,
-#game-container {
+#create-gate-name-popup,
+#create-gate-remove-confirm,
+#custom-gate-message,
+#custom-gate-view,
+#custom-gate-delete-confirm {
     position: fixed;
     top: 50%;
     left: 50%;
@@ -724,10 +661,9 @@ summary:focus-visible,
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
 }
 
-/* #input-count-popup and #login-popup carry their own dark
-   titlebar + inset body, so they override the generic padding
-   above rather than using it directly. */
-#input-count-popup,
+/* #login-popup carries its own dark titlebar + inset body (see
+   .popup-titlebar below), so it overrides the generic padding above
+   rather than using it directly. */
 #login-popup {
     padding: 0;
     overflow: hidden;
@@ -747,14 +683,56 @@ body::before {
 }
 
 body:has(#note-popup:not([hidden]))::before,
-body:has(#input-count-popup:not([hidden]))::before,
 body:has(#clear-all-confirm:not([hidden]))::before,
-body:has(#lonly-prompt:not([hidden]))::before,
 body:has(#login-popup:not([hidden]))::before,
 body:has(#limit-popup:not([hidden]))::before,
-body:has(#game-container:not([hidden]))::before {
+body:has(#create-gate-name-popup:not([hidden]))::before,
+body:has(#create-gate-remove-confirm:not([hidden]))::before,
+body:has(#custom-gate-message:not([hidden]))::before,
+body:has(#custom-gate-view:not([hidden]))::before,
+body:has(#custom-gate-delete-confirm:not([hidden]))::before {
     opacity: 1;
     pointer-events: auto;
+}
+
+/* ---------- Create Gate / Custom Gate popups ---------- */
+#create-gate-name-popup p,
+#custom-gate-message p,
+#custom-gate-delete-confirm p { margin: 0 0 12px; font-size: 0.85rem; }
+
+#create-gate-name-input {
+    display: block;
+    width: 100%;
+    padding: 6px 8px;
+    margin-bottom: 14px;
+    border: 1px solid var(--color-border);
+    border-radius: 3px;
+    font: inherit;
+}
+
+#create-gate-remove-confirm button,
+#custom-gate-message button,
+#custom-gate-view button,
+#custom-gate-delete-confirm button {
+    padding: 6px 14px;
+    border: 1px solid var(--color-border);
+    border-radius: 3px;
+    background: var(--color-bg);
+}
+
+#custom-gate-view { max-width: 480px; }
+#custom-gate-view-title { margin: 0 0 10px; }
+#custom-gate-view-body {
+    max-height: 50vh;
+    overflow-y: auto;
+    font-size: 0.8rem;
+    font-family: var(--font-mono);
+    white-space: pre-wrap;
+    background: var(--color-panel-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 3px;
+    padding: 10px;
+    margin-bottom: 12px;
 }
 
 #note-popup label {
@@ -781,9 +759,9 @@ body:has(#game-container:not([hidden]))::before {
     resize: vertical;
 }
 
-/* Shared titlebar for #input-count-popup and #login-popup: a dark
-   brand strip with a close (x) button, matching the reference
-   screenshot's "logic.ly" header bar. */
+/* Titlebar for #login-popup (no markup yet — see popups.js's sign-in
+   stub): a dark brand strip with a close (x) button, matching the
+   reference screenshot's "logic.ly" header bar. */
 .popup-titlebar {
     display: flex;
     align-items: center;
@@ -812,12 +790,6 @@ body:has(#game-container:not([hidden]))::before {
 
 .popup-body {
     padding: 16px 20px;
-}
-
-#input-count-gate-name {
-    margin: 0 0 14px;
-    color: var(--color-panel-header-bg);
-    font-size: 1.1rem;
 }
 
 .popup-body label {
@@ -899,14 +871,12 @@ body:has(#game-container:not([hidden]))::before {
     color: #ffffff;
 }
 
-#clear-all-confirm p,
-#lonly-prompt p {
+#clear-all-confirm p {
     margin: 0 0 14px;
     font-size: 0.9rem;
 }
 
-#clear-all-confirm button,
-#lonly-prompt button {
+#clear-all-confirm button {
     margin-right: 8px;
     padding: 6px 14px;
     background: var(--color-gate-bg);
@@ -914,21 +884,14 @@ body:has(#game-container:not([hidden]))::before {
     border-radius: 3px;
 }
 
-#clear-all-confirm button:last-child,
-#lonly-prompt button:last-child {
+#clear-all-confirm button:last-child {
     margin-right: 0;
 }
 
-#clear-all-yes,
-#lonly-yes {
+#clear-all-yes {
     background: var(--color-panel-header-bg);
     border-color: var(--color-panel-header-bg);
     color: #ffffff;
-}
-
-#game-container {
-    min-width: 320px;
-    min-height: 240px;
 }
 
 /* ============================================================
@@ -1152,85 +1115,33 @@ body:has(#game-container:not([hidden]))::before {
 }
 
 /* ============================================================
-   9. Canvas control templates
+/* ============================================================
+   9. Controls & wires on the canvas (JointJS-rendered SVG)
    ------------------------------------------------------------
-   Styles for the <template>s at the bottom of index.html, once
-   JS clones one into #canvas. Every element here is real HTML
-   (not a background-image icon) because these need per-instance
-   interactive state — unlike the palette drag-thumbnails above.
+   Every gate/control is a JointJS element (see shapes.js) whose markup
+   carries the SAME class names the old plain-HTML version used
+   (.control.<type>, .node-in, .gate-body, .switch-knob, ...), so these
+   rules are the direct SVG equivalent of the old flex/DOM ones: `fill` /
+   `stroke` in place of `background` / `border`, since presentation
+   properties on an SVG shape (not a box) are what actually render it.
+   Every color still comes from the same custom properties as before, so
+   dark mode keeps working unchanged.
    ============================================================ */
 
-.control {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    color: var(--color-gate-border);
-    /* No background/box here on purpose — a control is just its icon
-       (switch face, gate body, etc.) plus its nodes; the icon shapes
-       supply their own outlines, so wrapping the whole thing in
-       another filled box just reads as a stray white rectangle. */
-}
+.control { cursor: move; }
+.control.toggle-switch,
+.control.push-button { cursor: pointer; }
 
-/* --- Wire-connection nodes (small open circles) --- */
+/* ---------- Nodes (ports) ---------- */
 .node {
-    position: relative; /* anchors the connector-stub pseudo-element below */
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: var(--color-gate-bg);
-    border: 2px solid var(--color-gate-border);
-    flex: 0 0 auto;
+    fill: var(--color-gate-bg);
+    stroke: var(--color-gate-border);
+    stroke-width: 2;
 }
+.node-in.drop-target { fill: var(--color-node-unattached); stroke: var(--color-node-unattached); }
+.node.reject-flash { fill: var(--color-error); stroke: var(--color-error); }
 
-/* ---------- Node connector stubs ----------
-   Every node sits one flex `gap` away from the control/gate body it
-   belongs to; without a visible link the node reads as a floating
-   dot. Draw a short line bridging exactly that gap: node-in nodes
-   sit BEFORE the body in markup, so their stub extends to the right;
-   node-out nodes sit AFTER it, so theirs extends to the left. Each
-   control sets --node-stub to its own gap value so the line always
-   reaches exactly to the body's edge. */
-.node-in::after,
-.node-out::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    height: 2px;
-    width: var(--node-stub, 8px);
-    background: var(--color-gate-border);
-    transform: translateY(-50%);
-}
-.node-in::after { left: 100%; }
-.node-out::before { right: 100%; }
-
-/* Node color states.
-   - At rest (whether or not a wire is attached) a node is just the
-     plain white/dark-outline dot above — no permanent tint.
-   - .drop-target is added by JS only while a wire is actively being
-     dragged out of an output node, and only to input nodes that
-     don't already have a wire — a live "you can drop here" cue.
-   - .reject-flash is a brief red pulse JS adds when a drop is
-     rejected (e.g. the target already has a wire attached). */
-.node-in.drop-target {
-    background: var(--color-node-unattached);
-    border-color: var(--color-node-unattached);
-}
-
-.node.reject-flash {
-    background: var(--color-error);
-    border-color: var(--color-error);
-}
-
-/* ---------- Wires ----------
-   Wires are drawn by JS as a pair of stacked <path> elements inside
-   the #wire-layer SVG that sits over #canvas (see index.html): a
-   thicker dark ".wire-outline" underneath, and the actual colored
-   ".wire" on top. The outline keeps a wire visible against the
-   canvas even when its signal color is white (low/off) — matching
-   the reference screenshot's outlined-wire look — instead of a pure
-   white line disappearing into the light canvas background.
-   JS toggles .signal-high / .signal-low / .signal-clock on .wire to
-   recolor it as its value changes, and .selected when clicked. */
+/* ---------- Wires ---------- */
 .wire-outline {
     fill: none;
     stroke: var(--color-gate-border);
@@ -1238,514 +1149,106 @@ body:has(#game-container:not([hidden]))::before {
     stroke-linecap: round;
     pointer-events: none;
 }
-
 .wire {
     fill: none;
     stroke: var(--color-wire);
     stroke-width: 2;
     stroke-linecap: round;
     cursor: pointer;
-    pointer-events: stroke; /* clickable along its length, not just its bounding box */
+    pointer-events: stroke;
 }
-
-/* Color guide: white = low/off, orange = high/on, gray = a signal
-   that changes regularly (clock-driven wires), red = error. */
 .wire.signal-high { stroke: var(--color-true); }
 .wire.signal-low { stroke: var(--color-signal-off); }
 .wire.signal-clock { stroke: var(--color-wire-clock); }
 
-/* A wire still being dragged out (not yet dropped on a node) — no
-   signal color yet, just a visible in-progress preview line. */
-.wire.pending {
-    stroke: var(--color-gate-border);
-    stroke-dasharray: 5 4;
-}
-
-/* ---------- Selection ----------
-   "Highlighted" = selected: the user clicked a gate, a control
-   (switch/button/etc.), or a wire, and it can now be dragged. JS
-   toggles .selected on the clicked .control or .wire; multi-select
-   (rubber-band / Ctrl-click, per #btn-multiselect) can put it on more
-   than one element at once. */
-.control.selected {
-    outline: 2px dashed var(--color-selected);
-    outline-offset: 3px;
-    border-radius: 4px;
-}
-
-.wire.selected {
+/* ---------- Selection ---------- */
+.control.selected .gate-body,
+.control.selected .switch-track,
+.control.selected .push-button-face,
+.control.selected .clock-face,
+.control.selected .constant-face,
+.control.selected .bulb-glass,
+.control.selected .digit-face {
     stroke: var(--color-selected);
     stroke-width: 3;
 }
+.wire.selected { stroke: var(--color-selected); stroke-width: 3; }
 
-/* ---------- Toggle Switch ----------
-   Built as a real checkbox (same technique as #dark-mode-toggle), so
-   toggling on/off works with zero JavaScript. A square button
-   (.switch-track) with a smaller square inside it (.switch-knob);
-   pressing it toggles the checkbox, and the inner square is the only
-   part that changes color — the outer square stays a fixed frame. */
-.toggle-switch {
-    --node-stub: 10px;
-    gap: 10px;
-    padding: 6px;
+/* ---------- Logic gates ---------- */
+.gate-body,
+.gate-body-extra,
+.gate-bubble {
+    fill: var(--color-gate-bg);
+    stroke: var(--color-gate-border);
+    stroke-width: 2;
 }
+.gate-body-extra { fill: none; }
 
-.switch-body {
-    display: inline-block;
-    cursor: pointer;
-}
-
-.switch-input {
-    position: absolute;
-    opacity: 0;
-    width: 1px;
-    height: 1px;
-}
-
-/* Outer square: a static frame, same fill at rest either way. */
+/* ---------- Toggle switch ---------- */
 .switch-track {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    background: var(--color-gate-bg);
-    border: 2px solid var(--color-gate-border);
-    border-radius: 3px;
+    fill: var(--color-gate-bg);
+    stroke: var(--color-gate-border);
+    stroke-width: 2;
 }
-
-/* Inner square: off = same white/off face as everything else;
-   on = the same color used for High Constant / any other "on" face. */
 .switch-knob {
-    width: 16px;
-    height: 16px;
-    background: var(--color-signal-off);
-    border: 2px solid var(--color-gate-border);
-    border-radius: 2px;
-    transition: background-color 0.15s ease;
+    fill: var(--color-signal-off);
+    stroke: var(--color-gate-border);
+    stroke-width: 2;
+    /* Slides between the left and right half of the 20x20 track (base x=14
+       sits in the middle, so +/-4px reaches each inner edge) whenever
+       .checked toggles — purely cosmetic, keyed off the same class
+       logic.js/tables.js already use for the on/off fill below. */
+    transform: translateX(-4px);
+    transition: transform 0.15s ease;
 }
+.control.toggle-switch.checked .switch-knob { fill: var(--color-signal-on); transform: translateX(4px); }
 
-.switch-input:checked ~ .switch-track .switch-knob {
-    background: var(--color-signal-on);
-}
-
-.switch-input:focus-visible ~ .switch-track {
-    outline: 2px solid var(--color-focus);
-    outline-offset: 2px;
-}
-
-/* ---------- Push Button ----------
-   Pushed = mouse/keyboard held down. :active covers a physical
-   press with no JS; JS can add the same visual via a class if it
-   needs the "pushed" state to persist for a simulated cycle. */
-.push-button {
-    --node-stub: 10px;
-    gap: 10px;
-    padding: 6px;
-}
-
+/* ---------- Push button ---------- */
 .push-button-face {
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    background: var(--color-gate-bg);
-    border: 2px solid var(--color-gate-border);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
+    fill: var(--color-gate-bg);
+    stroke: var(--color-gate-border);
+    stroke-width: 2;
 }
-
 .push-button-inner {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: var(--color-signal-off);
-    border: 2px solid var(--color-gate-border);
+    fill: var(--color-signal-off);
+    stroke: var(--color-gate-border);
+    stroke-width: 2;
 }
+.push-button-inner.pushed { fill: var(--color-signal-on); }
 
-.push-button-face:active .push-button-inner,
-.push-button-face.pushed .push-button-inner {
-    background: var(--color-signal-on);
-}
-
-/* ---------- Clock ----------
-   Driven entirely by logic.js: one shared timer flips every clock's
-   value, and the .on class shows it (see .clock.on below). */
-.clock {
-    --node-stub: 10px;
-    gap: 10px;
-    padding: 6px;
-}
-
+/* ---------- Clock ---------- */
 .clock-face {
-    width: 30px;
-    height: 30px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+    fill: var(--color-gate-bg);
+    stroke: var(--color-gate-border);
+    stroke-width: 2;
 }
-
-.clock-indicator {
-    width: 16px;
-    height: 16px;
-    border-radius: 3px;
-    background: var(--color-signal-off);
-    border: 2px solid var(--color-gate-border);
-}
-
-/* JS (logic.js) adds .on while THIS clock's value is 1. Each clock keeps
+.clock-zigzag { stroke: var(--color-gate-border); stroke-width: 2; stroke-linejoin: round; }
+/* JS (logic.js) adds .on while THIS clock's value is 1 — each clock keeps
    its own value, so two clocks can be opposite each other. */
-.clock.on .clock-indicator {
-    background: var(--color-signal-on);
-}
+.control.clock.on .clock-face { fill: var(--color-signal-on); }
 
-/* ---------- High / Low Constant ----------
-   Fixed, non-interactive states. */
-.high-constant,
-.low-constant {
-    --node-stub: 10px;
-    gap: 10px;
-    padding: 6px;
-}
+/* ---------- High / low constant ---------- */
+.constant-face { stroke: var(--color-gate-border); stroke-width: 2; }
+.high-constant-face { fill: var(--color-signal-on); }
+.low-constant-face { fill: var(--color-signal-off); }
+.constant-label { fill: var(--color-gate-border); font-family: var(--font-mono); font-size: 16px; }
 
-.constant-face {
-    width: 30px;
-    height: 30px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 700;
-    font-size: 1rem;
-    border: 2px solid var(--color-gate-border);
-}
-
-.high-constant .constant-face {
-    background: var(--color-signal-on);
-}
-
-.low-constant .constant-face {
-    background: var(--color-signal-off);
-}
-
-/* ---------- Light Bulb ----------
-   Visual glow states are defined here; JS must add/remove ".on"
-   based on the signal the bulb actually receives, since that
-   depends on simulation logic this pass doesn't implement. */
-.light-bulb {
-    --node-stub: 8px;
-    gap: 8px;
-    padding: 6px;
-    flex-direction: column; /* bulb on top, input node centered BELOW it */
-    align-items: center;
-}
-
-/* The generic node stub runs sideways; the bulb's node is below the bulb,
-   so its stub runs UP to the base instead (wires enter from below). */
-.light-bulb .node-in::after {
-    top: auto;
-    bottom: 100%;
-    left: 50%;
-    width: 2px;
-    height: var(--node-stub, 8px);
-    transform: translateX(-50%);
-}
-
-/* Groups glass+filament and the base underneath it into one column,
-   so the outer .light-bulb column is just [this stack] + [input node]. */
-.bulb-stack {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-}
-
+/* ---------- Light bulb ---------- */
 .bulb-glass {
-    width: 34px;
-    height: 34px;
-    border-radius: 50%;
-    border: 2px solid var(--color-gate-border);
-    background: var(--color-signal-off);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+    fill: var(--color-signal-off);
+    stroke: var(--color-gate-border);
+    stroke-width: 2;
 }
+.bulb-filament { stroke: var(--color-gate-border); stroke-width: 1.5; }
+.bulb-base-line { stroke: var(--color-gate-border); stroke-width: 2; }
+.bulb-base-cap { fill: var(--color-gate-bg); stroke: var(--color-gate-border); stroke-width: 2; }
+.control.light-bulb.on .bulb-glass { fill: var(--color-signal-on); }
 
-.bulb-filament {
-    width: 14px;
-    height: 14px;
-    border: 1.5px solid var(--color-gate-border);
-    border-radius: 2px;
-    opacity: 0.6;
-}
-
-.bulb-base {
-    width: 18px;
-    height: 8px;
-    margin: -2px auto 0;
-    border: 2px solid var(--color-gate-border);
-    border-top: none;
-}
-
-.light-bulb.on .bulb-glass {
-    background: var(--color-signal-on);
-    box-shadow: 0 0 10px 3px var(--color-signal-on);
-}
-
-/* ---------- 4-Bit Digit ----------
-   Node order top-to-bottom is index 0-3 (index 0 = top node),
-   matching .digit-nodes' source order below. The displayed number
-   itself is written by JS — this only defines the container. */
-.four-bit-digit {
-    --node-stub: 8px;
-    gap: 8px;
-    padding: 6px;
-}
-
-.digit-nodes {
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    height: 56px;
-}
-
+/* ---------- 4-bit digit ---------- */
+.digit-face { fill: var(--color-gate-bg); stroke: var(--color-gate-border); stroke-width: 2; }
 .digit-display {
-    width: 34px;
-    height: 40px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+    fill: var(--color-gate-border);
     font-family: var(--font-mono);
     font-weight: 700;
-    font-size: 1.3rem;
-    color: var(--color-signal-on);
-    border: 2px solid var(--color-gate-border);
-}
-
-/* ---------- Logic gates (buffer/not/and/nand/or/nor/xor/xnor/tri-state) ----------
-   The gate body reuses the same icon shapes already defined for the
-   left-panel palette items (below) via the shared --icon variable,
-   so the two stay visually identical without duplicating the SVGs.
-   Input nodes are a flex column so any input count (set by JS via
-   the input-count popup) lays out evenly with no per-count CSS. */
-.logic-gate {
-    --node-stub: 4px;
-    gap: 4px;
-    padding: 4px;
-}
-
-.gate-inputs {
-    display: flex;
-    flex-direction: column;
-    justify-content: space-around;
-    align-self: stretch;
-}
-
-.gate-body {
-    width: 60px;
-    height: 40px;
-    background-repeat: no-repeat;
-    background-position: center;
-    background-size: contain;
-    background-image: var(--icon);
-}
-
-.logic-gate[data-type="buffer"] .gate-body,
-.palette-item[data-type="buffer"] {
-    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M12 8 L12 32 L42 20 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
-}
-
-.logic-gate[data-type="not"] .gate-body,
-.palette-item[data-type="not"] {
-    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M10 8 L10 32 L38 20 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='41.5' cy='20' r='3.5' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
-}
-
-.logic-gate[data-type="and"] .gate-body,
-.palette-item[data-type="and"] {
-    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M14 6 H22 A14 14 0 0 1 22 34 H14 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
-}
-
-.logic-gate[data-type="nand"] .gate-body,
-.palette-item[data-type="nand"] {
-    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M12 6 H20 A14 14 0 0 1 20 34 H12 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='39.5' cy='20' r='3.5' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
-}
-
-.logic-gate[data-type="or"] .gate-body,
-.palette-item[data-type="or"] {
-    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M10 6 Q24 6 40 20 Q24 34 10 34 Q19 20 10 6 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
-}
-
-.logic-gate[data-type="nor"] .gate-body,
-.palette-item[data-type="nor"] {
-    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M8 6 Q22 6 38 20 Q22 34 8 34 Q17 20 8 6 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='41.5' cy='20' r='3.5' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
-}
-
-.logic-gate[data-type="xor"] .gate-body,
-.palette-item[data-type="xor"] {
-    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M12 6 Q26 6 42 20 Q26 34 12 34 Q21 20 12 6 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Cpath d='M6 6 Q15 20 6 34' fill='none' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
-}
-
-.logic-gate[data-type="xnor"] .gate-body,
-.palette-item[data-type="xnor"] {
-    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M10 6 Q24 6 40 20 Q24 34 10 34 Q19 20 10 6 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Cpath d='M4 6 Q13 20 4 34' fill='none' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='43.5' cy='20' r='3.5' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
-}
-
-.logic-gate[data-type="tri-state"] .gate-body,
-.palette-item[data-type="tri-state"] {
-    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 40'%3E%3Cpath d='M12 10 L12 30 L36 20 Z' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3Cline x1='22' y1='10' x2='22' y2='4' stroke='%23212529' stroke-width='2'/%3E%3Ccircle cx='22' cy='4' r='2.5' fill='%23fff' stroke='%23212529' stroke-width='2'/%3E%3C/svg%3E");
-}
-
-/* ============================================================
-   Implementation notes — requests handled only partially (or not
-   at all) by HTML/CSS alone, per the "comment what isn't handled"
-   instruction. Everything else in the request list is fully done
-   above.
-
-   1. Light Bulb "turns on when it receives a 1" — the .on class
-      and its glow styling are defined (.light-bulb.on), but JS
-      must add/remove that class based on the actual signal the
-      bulb's node receives; CSS has no access to simulation state.
-
-   2. 4-Bit Digit "converts the 1/0 it receives into a number" —
-      the container, 4 ordered input nodes, and a .digit-display
-      box are built, but computing/writing the decimal value is
-      simulation logic and must be done in JS.
-
-   3. "in" nodes stay their plain white/dark-outline look at rest,
-      whether or not a wire is attached. JS only adds `.drop-target`
-      to an input node — and only while a wire is actively being
-      dragged out of an output node, and only to nodes that don't
-      already have a wire — as a live "you can drop here" cue; it's
-      removed again as soon as the drag ends (drop or cancel). A
-      brief `.reject-flash` (red) is JS's cue for a rejected drop.
-
-   4. Clock on/off "switching" — driven by JS (logic.js). One shared
-      timer flips each clock's own value every 800 ms and toggles the
-      .on class; the indicator color is .clock.on above. There is no
-      CSS animation, so two clocks can be out of phase.
-
-   5. Gate input-count minimum ("only Buffer and NOT Gate have 1 as
-      the default minimum input"): each Logic Gates .palette-item
-      carries data-min-inputs / data-default-inputs (see index.html
-      section 3) so JS can read the right numbers. Buffer and NOT are
-      1; every other gate, Tri-State included, is 2 — Tri-State's
-      second input is its enable line (see the tri-state note below),
-      not a second data line. Buffer and NOT also never grow past that
-      1 input (JS clamps/disables their input-count stepper) — unlike
-      every other gate, whose input count IS adjustable. JS still has
-      to apply these: set the relevant number input's min attribute
-      and starting value (and, for the standalone #input-count-popup,
-      fill in #input-count-gate-name) when a gate's input-count
-      control opens.
-
-   6. Wires — .wire-outline / .wire / .wire.pending / .wire.signal-high /
-      .wire.signal-low / .wire.signal-clock / .wire.selected are fully
-      styled, and #wire-layer fills #canvas-world, so wire coordinates are
-      world coordinates. JS draws a pair of stacked
-      <path>s (outline + colored) per wire on mousedown-drag from an
-      output node, enforces "one wire per input node, unlimited per
-      output node", recolors each wire as its signal changes
-      (.signal-clock for anything sourced from a Clock). Wires are deleted
-      by selecting them and pressing Delete (the eraser tool was
-      removed).
-
-   7. Selection ("highlighted" = clicked, and draggable) — the
-      .control.selected / .wire.selected look is fully defined, but
-      JS owns adding/removing .selected (single click, Ctrl-click for
-      multi-select, or the #btn-multiselect rubber-band) and the
-      actual drag-to-reposition behavior once something is selected.
-
-   8. Dark mode "Tokyo Night" — body.dark-mode redefines every design
-      token, which re-themes the whole app automatically since all
-      rules already read from custom properties. The one thing that
-      does NOT re-theme is the logic-gate/palette-item icon artwork:
-      those are literal-hex inline SVG data URIs (white fill / dark
-      stroke, baked in at authoring time), which can't read CSS
-      variables. They intentionally stay white-body/dark-outline in
-      dark mode too — a deliberate "chip on a dark canvas" look, not
-      an oversight. Swapping the icons themselves for real dark-mode
-      versions is a separate, later asset pass.
-
-   9. Toggle Switch, Push Button, Clock, High/Low Constant, Light
-      Bulb, 4-Bit Digit, and generic Logic Gate now all exist as
-      <template> tags in index.html (section 4b1); JS still has to
-      clone the right one onto #canvas on drag-and-drop, position it,
-      and wire up simulation logic — none of that is a CSS concern.
-
-   10. Formerly-open questions, now resolved (no CSS changes needed
-       for any of these — pure JS/markup):
-       - Tri-State is a standard tri-state buffer: data in (index 0)
-         + active-low enable (index 1, matching the icon's separate
-         bubbled enable line). Output follows data when enable = 0;
-         when enable = 1 the output drives no signal (floating/
-         high-impedance) rather than forcing 0 or 1 — see
-         javaScript.md §4.
-       - #zoom-slider is 50%-200%, 10% per step (min/max/step/value
-         now set directly on the element in index.html).
-       - Dark-mode choice persists across reloads via localStorage —
-         see javaScript.md §10.
-       - The Note tool now opens on double-click too (not only
-         #btn-note-then-click), and for gates it also carries the
-         input-count stepper inline — see index.html's #note-popup
-         and javaScript.md §5.
-   ============================================================ */
-
-/* ============================================================
-   Limit / warning dialog (#limit-popup) and truth-table cap message
-   ------------------------------------------------------------
-   #limit-popup is the shared dialog behind limits.js (circuit gate limit,
-   speed warnings, oversized truth tables). popups.js sets one severity
-   class on it: limit-notice | limit-warning | limit-dire. It reuses the
-   fixed/centered dialog rules and backdrop above, plus --color-error and
-   --color-true so dark mode follows automatically.
-   ============================================================ */
-#limit-popup {
-    max-width: min(440px, 90vw);
-    border-left-width: 6px;
-}
-
-#limit-popup h4 {
-    margin: 0 0 8px;
-    font-size: 1.05rem;
-}
-
-#limit-popup p {
-    margin: 0 0 16px;
-    font-size: 0.85rem;
-    line-height: 1.5;
-}
-
-#limit-popup.limit-notice { border-left-color: var(--color-input); }
-#limit-popup.limit-warning { border-left-color: var(--color-true); }
-#limit-popup.limit-dire {
-    border-color: var(--color-error);
-    border-left-color: var(--color-error);
-    box-shadow: 0 0 0 2px var(--color-error), 0 10px 30px rgba(0, 0, 0, 0.4);
-}
-#limit-popup.limit-dire h4 { color: var(--color-error); }
-
-#limit-confirm {
-    background: var(--color-panel-header-bg);
-    border-color: var(--color-panel-header-bg);
-    color: #ffffff;
-}
-#limit-popup.limit-dire #limit-confirm {
-    background: var(--color-error);
-    border-color: var(--color-error);
-}
-
-.table-cap-message {
-    padding: 8px 10px;
-    border: 1px dashed var(--color-gate-border);
-    font-size: 0.72rem;
-    line-height: 1.4;
-    background: var(--color-gate-bg);
-    color: var(--color-gate-border);
-}
-.table-cap-message p { margin: 0 0 6px; }
-.table-cap-message button {
-    padding: 4px 10px;
-    border: 1px solid var(--color-gate-border);
-    border-radius: 3px;
-    background: transparent;
+    font-size: 18px;
 }

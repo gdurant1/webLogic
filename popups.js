@@ -7,24 +7,27 @@
  *     (a double-click is two quick presses) and can only open its note
  *     through the pencil. Its #note-input-count-section only shows for logic
  *     gates.
- *   - #input-count-popup is a count-only alternative; nothing in index.html
- *     currently triggers it, but openInputCountPopup() is exported.
- *   - #clear-all-confirm and #lonly-prompt handle their own yes/no.
- *     "Lonly? -> Yes" opens the dating-sim page in a new tab.
+ *   - #clear-all-confirm handles its own yes/no.
  *   - #limit-popup is the shared warning dialog for limits.js (gate limit,
  *     speed guard, big truth tables). It is registered as limits.js's prompt
  *     handler below.
- *   - #login-popup is referenced in the CSS/spec but has no markup in
- *     index.html, so #btn-login stays a harmless stub.
+ *   - The pencil tool (#btn-note) also disarms on a blank-canvas click and
+ *     on Escape (Task 6.2), and shows its armed state via the toolbar's own
+ *     .selected style.
+ *   - Create Gate's own popups (#create-gate-name-popup,
+ *     #create-gate-remove-confirm, #custom-gate-message, #custom-gate-view,
+ *     #custom-gate-delete-confirm) are wired up in customGates.js, not here
+ *     — they're specific to that one feature.
+ *   - Sign In was removed entirely (Task 6.8); #login-popup's CSS was left
+ *     alone per instructions, but nothing opens it any more.
  */
 import * as App from './app.js';
-import * as Canvas from './canvas.js';
 import * as Logic from './logic.js';
 import * as Limits from './limits.js';
+import * as Shapes from './shapes.js';
+import { getPaperInstance } from './canvas.js';
 
-const DATING_SIM_URL = 'datingSimIndex.html';
-
-const viewport = document.getElementById('canvas');
+const paper = getPaperInstance();
 
 // ---------------- Note popup ----------------
 
@@ -72,28 +75,39 @@ document.addEventListener('click', (event) => {
 });
 
 const noteButton = document.getElementById('btn-note');
-if (noteButton) {
-    noteButton.addEventListener('click', () => {
-        noteToolArmed = true;
-    });
-}
 
-const controlFromEvent = (event) => {
-    const controlEl = event.target.closest('.control');
-    return controlEl ? App.getControl(controlEl.dataset.id) : undefined;
+const setNoteToolArmed = (armed) => {
+    noteToolArmed = armed;
+    if (noteButton) noteButton.classList.toggle('selected', armed); // visible armed state
 };
 
-// Pencil (#btn-note) then click: works for EVERY control, push buttons included.
-viewport.addEventListener('click', (event) => {
+if (noteButton) {
+    noteButton.addEventListener('click', () => setNoteToolArmed(true));
+}
+
+// Pencil (#btn-note) then click: works for EVERY control, push buttons
+// included. Runs alongside selection.js's own 'element:pointerclick'
+// listener (both fire on the same click, same as the old dual-purpose
+// click handling).
+paper.on('element:pointerclick', (elementView) => {
     if (!noteToolArmed) return;
-    noteToolArmed = false;
-    const control = controlFromEvent(event);
+    setNoteToolArmed(false);
+    const control = App.getControl(elementView.model.id);
     if (control) openNotePopup(control);
 });
 
+// Disarm on a blank-canvas click (Task 6.2) — runs alongside selection.js's
+// own 'blank:pointerclick' listener, which separately clears the selection.
+paper.on('blank:pointerclick', () => setNoteToolArmed(false));
+
+// Disarm on Escape (Task 6.2).
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && noteToolArmed) setNoteToolArmed(false);
+});
+
 // Double-click: every control EXCEPT the push button.
-viewport.addEventListener('dblclick', (event) => {
-    const control = controlFromEvent(event);
+paper.on('element:pointerdblclick', (elementView) => {
+    const control = App.getControl(elementView.model.id);
     if (!control || control.type === 'push-button') return;
     openNotePopup(control);
 });
@@ -108,78 +122,52 @@ export const setGateInputCount = (control, requested) => {
     const min = source ? parseInt(source.dataset.minInputs, 10) : 1;
     const target = Math.max(min, requested);
     const current = control.inputCount;
-    if (target === current) return;
 
     if (target > current) {
-        const inputsWrap = control.el.querySelector('.gate-inputs');
-        for (let i = current; i < target; i++) Canvas.addGateInputNode(inputsWrap, control.id, i);
-    } else {
+        for (let i = current; i < target; i++) {
+            control.cell.addPort({ id: `${control.id}-in-${i}`, group: 'in' });
+        }
+    } else if (target < current) {
         for (let i = current - 1; i >= target; i--) {
             const nodeId = `${control.id}-in-${i}`;
             const wire = App.getWireInto(nodeId);
             if (wire) App.removeWire(wire.id);
-            const node = App.getNode(nodeId);
-            if (node) {
-                node.el.remove();
-                App.unregisterNode(nodeId);
-            }
+            control.cell.removePort(nodeId);
         }
+    }
+    if (target !== current) {
+        Shapes.layoutPorts(control.cell);
+        Shapes.stampPortSides(control.cell, getPaperInstance());
     }
     control.inputCount = target;
     App.emit('control:inputcount', control);
     Logic.evaluate();
 };
 
-noteInputInc.addEventListener('click', () => {
-    const next = parseInt(noteInputCount.value, 10) + 1;
-    noteInputCount.value = String(next);
-    if (noteTarget) setGateInputCount(noteTarget, next);
-});
-noteInputDec.addEventListener('click', () => {
-    const next = Math.max(1, parseInt(noteInputCount.value, 10) - 1);
-    noteInputCount.value = String(next);
-    if (noteTarget) setGateInputCount(noteTarget, next);
-});
-
-// ---------------- Standalone gate input-count popup ----------------
-
-const inputCountPopup = document.getElementById('input-count-popup');
-const inputCountGateName = document.getElementById('input-count-gate-name');
-const inputCountField = document.getElementById('input-count');
-const inputCountDec = document.getElementById('input-count-decrease');
-const inputCountInc = document.getElementById('input-count-increase');
-const inputCountClose = document.getElementById('input-count-close');
-
-let inputCountTarget = null;
-
-export const openInputCountPopup = (control) => {
-    inputCountTarget = control;
-    inputCountGateName.textContent = control.type.toUpperCase();
-    inputCountField.value = String(control.inputCount);
-    const source = document.querySelector(`.palette-item[data-type="${control.type}"]`);
-    inputCountField.min = source ? source.dataset.minInputs : '1';
-    const fixed = App.FIXED_INPUT_TYPES.has(control.type);
-    inputCountInc.disabled = fixed;
-    inputCountDec.disabled = fixed;
-    inputCountPopup.hidden = false;
+/**
+ * Clamp `requested` to the gate's real minimum and write the RESULT back to
+ * the field (Task 6.1) — needed because setGateInputCount silently re-clamps
+ * internally too, so without this the field could show a value (e.g. an AND
+ * gate's minus button driving the field to 1) that doesn't match the gate's
+ * actual input count (which the min already held at 2), a real
+ * display/data mismatch.
+ */
+const applyNoteInputCount = (requested) => {
+    if (!noteTarget) return;
+    setGateInputCount(noteTarget, requested);
+    noteInputCount.value = String(noteTarget.inputCount);
 };
 
-const closeInputCountPopup = () => {
-    inputCountPopup.hidden = true;
-    inputCountTarget = null;
-};
+noteInputInc.addEventListener('click', () => applyNoteInputCount(parseInt(noteInputCount.value, 10) + 1));
+noteInputDec.addEventListener('click', () => applyNoteInputCount(parseInt(noteInputCount.value, 10) - 1));
 
-inputCountInc.addEventListener('click', () => {
-    const next = parseInt(inputCountField.value, 10) + 1;
-    inputCountField.value = String(next);
-    if (inputCountTarget) setGateInputCount(inputCountTarget, next);
+// Typing a value directly into the field (Task 6.1's "also when typed into
+// the number field") previously did nothing at all — only the +/- buttons
+// worked.
+noteInputCount.addEventListener('change', () => {
+    const typed = parseInt(noteInputCount.value, 10);
+    applyNoteInputCount(Number.isNaN(typed) ? (noteTarget ? noteTarget.inputCount : 1) : typed);
 });
-inputCountDec.addEventListener('click', () => {
-    const next = Math.max(1, parseInt(inputCountField.value, 10) - 1);
-    inputCountField.value = String(next);
-    if (inputCountTarget) setGateInputCount(inputCountTarget, next);
-});
-inputCountClose.addEventListener('click', closeInputCountPopup);
 
 // ---------------- Clear All ----------------
 
@@ -196,35 +184,6 @@ document.getElementById('clear-all-yes').addEventListener('click', () => {
 document.getElementById('clear-all-no').addEventListener('click', () => {
     clearAllConfirm.hidden = true;
 });
-
-// ---------------- Lonly? ----------------
-
-const lonlyPrompt = document.getElementById('lonly-prompt');
-const lonlyButton = document.getElementById('btn-lonly');
-
-if (lonlyButton) {
-    lonlyButton.addEventListener('click', () => {
-        lonlyPrompt.hidden = false;
-    });
-}
-document.getElementById('lonly-yes').addEventListener('click', () => {
-    lonlyPrompt.hidden = true;
-    // New tab: the simulator (and whatever is on its canvas) stays untouched.
-    window.open(DATING_SIM_URL, '_blank', 'noopener');
-});
-document.getElementById('lonly-no').addEventListener('click', () => {
-    lonlyPrompt.hidden = true;
-});
-
-// ---------------- Sign-in stub ----------------
-// #login-popup has no markup in this index.html yet, so there is nothing to open.
-
-const loginButton = document.getElementById('btn-login');
-if (loginButton) {
-    loginButton.addEventListener('click', () => {
-        console.info('Sign In clicked — #login-popup markup is not present in index.html yet.');
-    });
-}
 
 // ---------------- Limit / warning dialog (used by limits.js) ----------------
 

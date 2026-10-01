@@ -1,69 +1,44 @@
 /**
  * main.js — Application Entry Point
  * ---------------------------------------------------------------------------
- * The only <script> index.html loads. Importing the feature modules is what
- * starts them: each one attaches its own listeners when it is first imported
- * (module scripts are deferred, so the DOM is fully parsed by then).
+ * The only <script> index.html loads (after the JointJS UMD build itself,
+ * loaded as a plain classic <script> so its `joint`/`g`/`V` globals exist
+ * before this module evaluates — see index.html).
  *
- * This file owns two things that need to see every module:
+ * Import order matters here in one specific way: canvas.js creates the
+ * `joint.dia.Paper` (and, folded into the same file, the code that turns a
+ * completed drag into a registered wire — see canvas.js's header) at
+ * module-evaluation time, and selection.js / popups.js / toolbar.js each
+ * read that paper via `getPaperInstance()` at THEIR module-evaluation time
+ * too. Because each of those files itself `import`s canvas.js, ES modules
+ * guarantee canvas.js's body has already run before theirs does, regardless
+ * of the order main.js imports them in below — but canvas.js still has to
+ * be imported by SOMETHING before this file's own top-level code (the
+ * mousedown-adjacent work is now mostly paper events set up inside those
+ * files themselves, so main.js's only remaining job is the first render
+ * pass).
  *
- * 1. THE MOUSEDOWN ROUTER — one listener on the canvas that decides what a
- *    press means, replacing the four separate mousedown handlers that used
- *    to live in canvas.js / wires.js / selection.js / toolbar.js:
- *       press on an output node        -> Wires.beginWireDrag
- *       press on a control's body      -> Canvas.beginControlDrag
- *                                         (ignored by the pan tool)
- *       press on empty space, multiselect armed -> Selection.beginRubberBand
- *       press on empty space otherwise -> Toolbar.beginPan
- *    Input nodes and a control's own inputs/buttons/switch are left alone so
- *    they keep working normally. Only the left button is handled.
- *
- * 2. THE FIRST PASS — size and center the world, then run one evaluation and
- *    one truth-table build so everything is correct on the first frame.
+ * customGates.js (Phase A "Create Gate") imports both canvas.js and
+ * logic.js itself (for their late-bound resolvers — see that file's
+ * header for why a two-way static import back here would be circular), so
+ * by the time ITS body runs, both are already fully evaluated regardless of
+ * where its import line sits below.
  */
-import './theme.js';
 import * as Canvas from './canvas.js';
-import * as Wires from './wires.js';
-import * as Selection from './selection.js';
+import './selection.js';
 import * as Logic from './logic.js';
 import * as Tables from './tables.js';
-import * as Toolbar from './toolbar.js';
+import * as Toolbar from './toolbar.js'; // also wires up dark mode — see its header
 import './popups.js';
-
-const viewport = document.getElementById('canvas');
-
-viewport.addEventListener('mousedown', (event) => {
-    if (event.button !== 0) return;
-    const target = event.target;
-
-    const outNode = target.closest('.node-out');
-    if (outNode) {
-        Wires.beginWireDrag(event, outNode);
-        return;
-    }
-
-    const controlEl = target.closest('.control');
-    if (controlEl) {
-        if (target.closest('.node')) return; // input nodes are wire targets, not handles
-        if (target.closest('input, textarea, button, .switch-body')) return; // let the control's own UI work
-        if (Toolbar.getActiveTool() === 'pan') return;
-        Canvas.beginControlDrag(event, controlEl);
-        return;
-    }
-
-    if (Selection.isMultiSelectMode()) {
-        Selection.beginRubberBand(event);
-        return;
-    }
-    Toolbar.beginPan(event);
-});
+import * as CustomGates from './customGates.js';
 
 const start = () => {
     Toolbar.initViewport();
+    CustomGates.loadFromStorage(); // populate the Custom Gates palette before the first render
     Logic.evaluate();
     Tables.rebuild();
 };
 
-// Module scripts run before DOMContentLoaded, but stay safe if that ever changes.
+// Module scripts run after the DOM is parsed, but stay safe if that ever changes.
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
 else start();

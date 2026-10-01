@@ -32,41 +32,57 @@ const EMPTY_CELL = '\u2014';
 const cell = (value) => (value === undefined ? EMPTY_CELL : String(value));
 
 // ---------------- Individual gate tables ----------------
+// buildGateTable() is generic — it just needs a caption, an input/output
+// column-count, and a row generator. Built-in gates compute rows straight
+// from GATE_FUNCS; a custom gate instance (customGates.js) already HAS its
+// full truth table precomputed, so its rows are a lookup, not a computation.
 
-const truthTableRows = (type, inputCount) => {
+const builtinRows = (type, inputCount) => {
     const fn = Logic.GATE_FUNCS[type];
     const rows = [];
     for (let i = 0; i < 2 ** inputCount; i++) {
         const ins = [];
         for (let bit = inputCount - 1; bit >= 0; bit--) ins.push(Math.floor(i / 2 ** bit) % 2);
-        rows.push({ ins, out: fn(ins) });
+        rows.push({ ins, outs: [fn(ins)] });
     }
     return rows;
 };
 
-const buildGateTable = (control) => {
+const customGateRows = (definition) => {
+    const rows = [];
+    for (let i = 0; i < 2 ** definition.inputCount; i++) {
+        const ins = [];
+        for (let bit = definition.inputCount - 1; bit >= 0; bit--) ins.push(Math.floor(i / 2 ** bit) % 2);
+        rows.push({ ins, outs: definition.truthTable.get(ins.join(',')) || [] });
+    }
+    return rows;
+};
+
+const buildTable = (caption, inputCount, outputLabels, rows) => {
     const table = document.createElement('table');
-    const caption = document.createElement('caption');
-    caption.textContent = control.type.toUpperCase();
-    table.appendChild(caption);
+    const captionEl = document.createElement('caption');
+    captionEl.textContent = caption;
+    table.appendChild(captionEl);
 
     const thead = document.createElement('thead');
     const headRow = document.createElement('tr');
-    for (let i = 0; i < control.inputCount; i++) {
+    for (let i = 0; i < inputCount; i++) {
         const th = document.createElement('th');
         th.textContent = `In${i + 1}`;
         headRow.appendChild(th);
     }
-    const outTh = document.createElement('th');
-    outTh.textContent = 'Out';
-    headRow.appendChild(outTh);
+    outputLabels.forEach((label) => {
+        const th = document.createElement('th');
+        th.textContent = label;
+        headRow.appendChild(th);
+    });
     thead.appendChild(headRow);
     table.appendChild(thead);
 
     const tbody = document.createElement('tbody');
-    truthTableRows(control.type, control.inputCount).forEach((row) => {
+    rows.forEach((row) => {
         const tr = document.createElement('tr');
-        [...row.ins, row.out].forEach((value) => {
+        [...row.ins, ...row.outs].forEach((value) => {
             const td = document.createElement('td');
             td.textContent = cell(value);
             tr.appendChild(td);
@@ -75,6 +91,17 @@ const buildGateTable = (control) => {
     });
     table.appendChild(tbody);
     return table;
+};
+
+/** A standalone (not wired into a bigger circuit) gate or custom-gate instance. */
+const buildGateTable = (control) => {
+    if (control.type.startsWith('custom:')) {
+        const definition = Logic.getCustomGateDefinition(control.type.slice('custom:'.length));
+        if (!definition) return document.createTextNode('');
+        const outputLabels = definition.outputCount <= 1 ? ['Out'] : Array.from({ length: definition.outputCount }, (_, i) => `Out${i + 1}`);
+        return buildTable(definition.name, definition.inputCount, outputLabels, customGateRows(definition));
+    }
+    return buildTable(control.type.toUpperCase(), control.inputCount, ['Out'], builtinRows(control.type, control.inputCount));
 };
 
 // ---------------- Circuit tables ----------------
@@ -96,7 +123,7 @@ const evaluateComponent = (components, switchValues) => {
         else if (control.type === 'push-button') values.set(key, 0); // clocks stay unknown (undefined), as before
     });
 
-    const gates = components.filter((control) => Logic.GATE_FUNCS[control.type]);
+    const gates = components.filter((control) => Logic.GATE_FUNCS[control.type] || isCustomGateControl(control));
     for (let pass = 0; pass < gates.length + 2; pass++) {
         let changed = false;
         gates.forEach((gate) => {
@@ -105,11 +132,20 @@ const evaluateComponent = (components, switchValues) => {
                 const wire = App.getWireInto(`${gate.id}-in-${i}`);
                 ins.push(wire && values.has(wire.fromNodeId) ? values.get(wire.fromNodeId) : undefined);
             }
-            const key = `${gate.id}-out`;
-            const out = Logic.GATE_FUNCS[gate.type](ins);
-            if (!values.has(key) || values.get(key) !== out) {
-                values.set(key, out);
-                changed = true;
+            if (isCustomGateControl(gate)) {
+                const definition = Logic.getCustomGateDefinition(gate.type.slice('custom:'.length));
+                const outs = definition ? (ins.some((v) => v === undefined) ? new Array(definition.outputCount).fill(undefined) : (definition.truthTable.get(ins.join(',')) || [])) : [];
+                outs.forEach((out, i) => {
+                    const key = `${gate.id}-out-${i}`;
+                    if (!values.has(key) || values.get(key) !== out) { values.set(key, out); changed = true; }
+                });
+            } else {
+                const key = `${gate.id}-out`;
+                const out = Logic.GATE_FUNCS[gate.type](ins);
+                if (!values.has(key) || values.get(key) !== out) {
+                    values.set(key, out);
+                    changed = true;
+                }
             }
         });
         if (!changed) break;
@@ -117,33 +153,53 @@ const evaluateComponent = (components, switchValues) => {
     return values;
 };
 
-const sinkValue = (sink, values) => {
-    if (sink.type === 'four-bit-digit') {
+const isCustomGateControl = (control) => typeof control.type === 'string' && control.type.startsWith('custom:');
+
+/**
+ * One descriptor per output COLUMN a component contributes to the master
+ * table — plural for a custom gate with more than one output, singular (or
+ * none) for everything else. A custom gate's output only shows a column
+ * when that specific output is dangling (unconnected), same rule as a
+ * built-in gate's single output.
+ */
+const outputDescriptorsFor = (control) => {
+    if (control.type === 'light-bulb') return [{ control, label: 'Bulb' }];
+    if (control.type === 'four-bit-digit') return [{ control, label: 'Digit', isDigit: true }];
+    if (isCustomGateControl(control)) {
+        const definition = Logic.getCustomGateDefinition(control.type.slice('custom:'.length));
+        if (!definition) return [];
+        const descriptors = [];
+        for (let i = 0; i < definition.outputCount; i++) {
+            if (App.getWiresFromNode(`${control.id}-out-${i}`).length === 0) {
+                descriptors.push({ control, outIndex: i, label: definition.outputCount > 1 ? `${definition.name}.${i}` : definition.name });
+            }
+        }
+        return descriptors;
+    }
+    if (Logic.GATE_FUNCS[control.type] && !hasOutgoingWire(control)) return [{ control, label: control.type.toUpperCase() }];
+    return [];
+};
+
+const descriptorValue = (d, values) => {
+    if (d.isDigit) {
         let digit = 0;
         for (let bit = 0; bit < 4; bit++) {
-            const wire = App.getWireInto(`${sink.id}-in-${bit}`);
+            const wire = App.getWireInto(`${d.control.id}-in-${bit}`);
             if (wire && values.get(wire.fromNodeId) === 1) digit += 2 ** (3 - bit);
         }
         return digit;
     }
-    if (sink.type === 'light-bulb') {
-        const wire = App.getWireInto(`${sink.id}-in-0`);
+    if (d.control.type === 'light-bulb') {
+        const wire = App.getWireInto(`${d.control.id}-in-0`);
         return wire && values.has(wire.fromNodeId) ? values.get(wire.fromNodeId) : undefined;
     }
-    return values.get(`${sink.id}-out`);
-};
-
-const sinkLabel = (sink) => {
-    if (sink.type === 'light-bulb') return 'Bulb';
-    if (sink.type === 'four-bit-digit') return 'Digit';
-    return sink.type.toUpperCase();
+    if (d.outIndex !== undefined) return values.get(`${d.control.id}-out-${d.outIndex}`);
+    return values.get(`${d.control.id}-out`);
 };
 
 const buildCircuitTable = (components) => {
     const switches = components.filter((control) => control.type === 'toggle-switch');
-    const sinks = components.filter((control) =>
-        control.type === 'light-bulb' || control.type === 'four-bit-digit' ||
-        (Logic.GATE_FUNCS[control.type] && !hasOutgoingWire(control)));
+    const sinks = components.flatMap(outputDescriptorsFor);
 
     const table = document.createElement('table');
     const thead = document.createElement('thead');
@@ -155,7 +211,7 @@ const buildCircuitTable = (components) => {
     });
     sinks.forEach((sink) => {
         const th = document.createElement('th');
-        th.textContent = sinkLabel(sink);
+        th.textContent = sink.label;
         headRow.appendChild(th);
     });
     thead.appendChild(headRow);
@@ -176,14 +232,16 @@ const buildCircuitTable = (components) => {
         });
         sinks.forEach((sink) => {
             const td = document.createElement('td');
-            td.textContent = cell(sinkValue(sink, values));
+            td.textContent = cell(descriptorValue(sink, values));
             tr.appendChild(td);
         });
 
         tr.addEventListener('click', () => {
+            // No real <input type="checkbox"> any more (see shapes.js) — a
+            // toggle switch's on/off state is the `.checked` class on its
+            // cell root, same place logic.js's getSourceValue() reads it.
             switches.forEach((control) => {
-                const checkbox = control.el.querySelector('.switch-input');
-                if (checkbox) checkbox.checked = assignment.get(control.id) === 1;
+                control.el.classList.toggle('checked', assignment.get(control.id) === 1);
             });
             Logic.evaluate();
         });
@@ -234,7 +292,7 @@ export const rebuild = () => {
     components.forEach((group) => group.forEach((control) => groupedIds.add(control.id)));
 
     App.allControls().forEach((control) => {
-        if (App.GATE_TYPES.has(control.type) && !groupedIds.has(control.id)) {
+        if ((App.GATE_TYPES.has(control.type) || isCustomGateControl(control)) && !groupedIds.has(control.id)) {
             listEl.appendChild(buildGateTable(control));
         }
     });
@@ -252,7 +310,7 @@ export const rebuild = () => {
 
         body.appendChild(allowed ? buildCircuitTable(group) : buildCapMessage(inputCount, controlIds));
         group
-            .filter((control) => App.GATE_TYPES.has(control.type))
+            .filter((control) => App.GATE_TYPES.has(control.type) || isCustomGateControl(control))
             .forEach((control) => body.appendChild(buildGateTable(control)));
         listEl.appendChild(fragment);
     });

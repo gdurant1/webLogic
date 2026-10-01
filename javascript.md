@@ -1,113 +1,275 @@
 # Master Prompt: Behavior & Architecture Spec
 
-> Specification for the modular JavaScript implementation. Assumes the current `index.html` (including the `<template>`s, the `#canvas` → `#canvas-sizer` → `#canvas-world` structure, the `#wire-layer` SVG and the popup elements) and `style.css` (custom properties and `body.dark-mode`). The code is the source of truth where the two disagree.
+> Specification for the modular JavaScript implementation. Rewritten for the
+> JointJS-based rewrite: gates, controls and wires are now `@joint/core`
+> (JointJS open-source, MPL-2.0) elements/links instead of hand-built DOM and
+> hand-drawn SVG. The code is the source of truth where the two disagree.
 
 ## How it runs
 
-All modules are **ES modules** (`import` / `export`). `index.html` loads a single `<script type="module" src="main.js">`, and `main.js` imports the rest. The page must be **served over http** (VS Code Live Server, Codespaces, `python -m http.server`); ES modules do not load from `file://`.
+Every module is an **ES module** (`import` / `export`). `index.html` loads
+`lib/joint.js` (the JointJS UMD build — see "Offline / vendoring" below) as a
+plain classic `<script>` first, so its `joint`/`g`/`V` globals exist before
+`<script type="module" src="main.js">` runs; `main.js` then imports the rest.
+The page must still be **served over http**; ES modules do not load from a
+`file://` URL.
 
-Cross-module communication goes through `app.js` (shared state) and its `events` EventTarget, so the import graph has no cycles:
+### Why JointJS core, not `joint.shapes.logic` or Rappid
 
-```
-app.js ← limits.js ← logic.js, wires.js, tables.js, popups.js
-app.js ← canvas.js ← selection.js, popups.js
-logic.js ← tables.js, popups.js, toolbar.js        popups.js ← toolbar.js
-main.js imports everything (and owns the mousedown router)
-```
+Two deliberate exclusions:
+- **`joint.shapes.logic`** (a bundled demo shape library) is tied to the old,
+  now-deprecated `jointjs` npm package, and JointJS's own actively-maintained
+  "Logic Circuits" demo is built with **JointJS+** (a separate paid product),
+  not open-source core. `shapes.js` instead defines every gate/control as a
+  plain `joint.dia.Element`, reusing the project's own original SVG icon
+  paths so the look is unchanged.
+- **Rappid** (JointJS+'s UI toolkit — Halo, Stencil, PaperScroller,
+  SelectionView, Inspector) isn't open source either. Anywhere the old plan
+  called for a Rappid widget, this app either uses the open-source
+  equivalent building block instead (`paper.scale()`/`paper.translate()` in
+  place of `ui.PaperScroller`; `paper.findViewsInArea()` in place of
+  `ui.SelectionView`'s rubber-band) or hand-rolls the small remaining gap
+  (drag-to-pan, multi-selection group-drag) directly against the Paper.
+
+### Offline / vendoring
+
+`index.html`'s `<script src="lib/joint.js">` expects that file to exist
+locally (`npm install @joint/core`, then copy
+`node_modules/@joint/core/dist/joint.js` in) — no CDN, no network access at
+runtime once it's there. No `joint.css` is loaded or needed: none of this
+app's UI is a Rappid widget, so every visual is still styled by this
+project's own `style.css`.
 
 ## Module Architecture Overview
 
-The application logic is partitioned into 11 decoupled modules:
+The application logic is partitioned into **8 decoupled modules** (down from
+11 in the pre-JointJS version — two were folded into the files whose Paper/
+graph they were really extensions of; see each module's own note below):
 
-1. **`app.js`**: Shared data model — controls, wires, node registry, selection, zoom, circuit grouping, coordinate conversion. Single source of truth.
-2. **`limits.js`**: §1b — circuit gate limit, truth-table input cap, speed guard, and the prompt queue. Decides and remembers; `popups.js` draws the dialog.
-3. **`canvas.js`**: §2 — palette drag-and-drop, cloning `<template>`s into `#canvas-world`, dragging placed controls.
-4. **`wires.js`**: §3 — wire drawing/attachment in `#wire-layer`, 1-wire-per-input rule, cached node geometry, batched redraws.
-5. **`selection.js`**: §4 — click-select, rubber-band, delete, cut/copy/paste, flip, group.
-6. **`logic.js`**: §5 — gate evaluation, sources/sinks, shared clock timer, play/stop.
-7. **`tables.js`**: §6 — single-gate and circuit truth tables, with the input cap.
-8. **`popups.js`**: §7 — note popup, input-count popups, clear-all, lonly, and the limit dialog.
-9. **`toolbar.js`**: §8 — toolbar buttons, zoom, pan, viewport setup.
-10. **`theme.js`**: §9 — dark mode + `localStorage`.
-11. **`main.js`**: §10 — entry point and the single mousedown router.
+```
+app.js ← limits.js ← canvas.js, logic.js, tables.js, popups.js
+app.js ← canvas.js ← selection.js, popups.js, toolbar.js
+shapes.js ← canvas.js
+logic.js ← tables.js, popups.js, toolbar.js        popups.js ← toolbar.js
+main.js imports everything, and runs the first render pass
+```
 
-The **dating sim** (`datingSimIndex.html`) is a separate page with its own modules (`datingSimMain.js`, `datingSimRender.js`, `datingSimDialogue.js`, `datingSimAudio.js`, `datingSimCircuit.js`) — see `dateSim.md`.
+1. **`app.js`**: §1 — shared data model: controls, wires, selection, zoom —
+   now backed by a `joint.dia.Graph` instead of hand-rolled Maps, but with
+   the SAME public functions as before (`addControl`, `getWireInto`,
+   `getComponents`, ...), which is why limits.js/tables.js/logic.js/popups.js
+   needed almost no changes when the rendering layer underneath them changed.
+2. **`shapes.js`**: §2 — every gate/control as a custom `joint.dia.Element`
+   subclass (see §2 below), plus the two-path `Wire` link type.
+3. **`canvas.js`**: §3 — creates the one `joint.dia.Paper` and
+   `joint.dia.Graph` for the app; palette drag-and-drop; placing controls;
+   pan and wheel-zoom-toward-cursor via `paper.scale()`/`paper.translate()`;
+   **and** (folded in from the old, separate `wires.js`) the code that turns
+   a completed drag-to-connect gesture into a registered wire, since that is
+   really just more of the same Paper's own event wiring, and needs
+   `graph`/`paper` from right here. (It couldn't live in app.js instead —
+   app.js is imported *by* limits.js, and this code needs limits.js's
+   gate-count approval check, so putting it in app.js would create an import
+   cycle.)
+4. **`limits.js`**: §4 — circuit gate limit, truth-table input cap, speed
+   guard, prompt queue. Unchanged from the pre-JointJS version — it only
+   ever talked to app.js's public API, never to the rendering layer, so the
+   whole rewrite didn't touch it.
+5. **`selection.js`**: §5 — click-select and rubber-band now run off the
+   Paper's own `element:pointerclick` / `link:pointerclick` /
+   `blank:pointerdown` events; the rubber-band itself uses the built-in
+   `paper.findViewsInArea()` in place of the old manual bounding-box math.
+   Delete/cut/copy/paste/flip/group are otherwise the same idea as before.
+6. **`logic.js`**: §6 — gate evaluation, sources/sinks, the shared clock
+   timer, Play/Stop. Behavior is unchanged; only *how a source's value is
+   read* changed, since a toggle switch/push button is an SVG shape now, not
+   a real `<input>`/`<button>` (see §6 below).
+7. **`tables.js`**: §7 — truth tables. Unchanged except the master-table
+   row-click handler, which sets a `.checked` class instead of a checkbox's
+   `.checked` property (same reason as logic.js).
+8. **`popups.js`**: §8 — note popup, input-count popups, clear-all, the
+   limit dialog. `setGateInputCount` now calls `cell.addPort()`/
+   `removePort()` instead of building/removing DOM nodes by hand, and the
+   note-tool click / double-click handlers moved from raw DOM listeners to
+   `paper.on('element:pointerclick'/'element:pointerdblclick', ...)`.
+9. **`toolbar.js`**: §9 — toolbar buttons, and the zoom slider/buttons
+   (delegating the actual math to canvas.js's `zoomTo()` so the slider, the
+   +/- buttons and the mouse wheel all agree). **Also** (folded in from the
+   old, separate `theme.js`) dark mode: `#dark-mode-toggle` lives in the
+   same `#status-bar` this file already owns and shares no graph/paper state
+   with anything else, so it didn't need its own file.
+10. **`main.js`**: §10 — entry point; import order plus the first
+    `evaluate()`/`Tables.rebuild()` pass.
 
 ---
 
 ## Detailed Module Specifications
 
 ### 1. `app.js` (Shared Data Model)
-- Constants: `WORLD_SIZE` (20000), `MIN_ZOOM`/`MAX_ZOOM` (0.5 / 2), `GATE_TYPES`, `FIXED_INPUT_TYPES` (Buffer, NOT).
-- State: `controls` (Map), `wires` (Map), `nodeIndex` (Map: nodeId → `{ el, controlId, kind, index }`), plus lookup indexes: wires by control, wires from an output node, and the one wire into an input node. Selection is a Set of `"c:<id>"` / `"w:<id>"` keys.
-- A **control** is `{ id, type, el, x, y, inputCount, note?, groupId?, flipH?, flipV?, clockValue?, capApproved?, tableCapApproved? }`. `x`/`y` are **world** coordinates (unscaled pixels).
-- API: `addControl/removeControl`, `registerNode/getNode`, `addWire/removeWire`, `getWireInto`, `getWiresFromNode`, `getWiresForControl`, `isNodeOccupied`, `getConnectedControlIds`, `getComponents`, selection functions, `getZoom/setZoom`, `clientToWorld`, `swallowNextClick`.
-- Notifications on `events`: `control:add`, `control:placed`, `control:move`, `control:remove`, `control:inputcount`, `control:flip`, `wire:add`, `wire:remove`, `selection:change`, `zoom:change`, `simulation:update`.
+- Constants: `WORLD_SIZE` (20000 — the Paper's model-space size, a practical
+  "infinite canvas" limit), `MIN_ZOOM`/`MAX_ZOOM` (0.5 / 2), `GATE_TYPES`,
+  `FIXED_INPUT_TYPES` (Buffer, NOT).
+- `setGraph()`/`setPaper()` are called once by canvas.js; everything else
+  reaches the graph/paper only through app.js's functions.
+- A **control** is `{ id, type, cell, el, x, y, inputCount, note?, groupId?,
+  flipH?, flipV?, clockValue?, capApproved?, tableCapApproved? }`. `cell` is
+  the `joint.dia.Element`; `el` is that cell's rendered SVG `<g>`
+  (`cellView.el`) — existing class-based code (`.classList.toggle`,
+  `.querySelector(...)`) keeps working unchanged against it, because
+  `SVGElement` supports the same DOM APIs as HTML elements.
+- A **wire** is `{ id, cell, fromNodeId, toNodeId, fromControlId,
+  toControlId, pathEl, outlineEl, signal }`. `cell` is the `joint.dia.Link`;
+  `pathEl`/`outlineEl` are the two `<path>`s its own markup renders (see
+  §2's Wire).
+- **Node ids** (`"<controlId>-out"`, `"<controlId>-in-<i>"`) are literally
+  the JointJS **port ids** (see §2), so there is no separate node registry
+  to keep in sync: `getNode(nodeId)` parses the id, finds the cell, and
+  looks its port magnet up on demand via `[port="…"]` — the literal
+  attribute JointJS itself renders on every port.
+- API otherwise unchanged: `addControl/removeControl`, `getWireInto`,
+  `getWiresFromNode`, `getWiresForControl`, `isNodeOccupied`,
+  `getConnectedControlIds`, `getComponents`, the selection functions,
+  `getZoom/setZoom`, `swallowNextClick`.
 
-### 1b. `limits.js` (Circuit limits & speed guard)
-- **Gate limit (per circuit).** A circuit is a group of wired-together controls. Up to `CIRCUIT_GATE_LIMIT` = 10 gates: no prompt. A wire that would join gates into a circuit of more than 10 opens a warning dialog ("adding more gates will cause issues"); the user must approve removing the limit for that circuit. Declined = the wire is not made. Approved = every control in that circuit gets `capApproved`, and more gates can be added.
-- **Speed guard.** Only runs once some circuit has been approved. It takes the median of the last 5 `evaluate()` times plus the median of the last 5 truth-table rebuild times, and compares that "update cost" with a 60 fps frame budget (16.7 ms). Each time the cost crosses a stage upward the user is prompted again:
+### 2. `shapes.js` (Custom JointJS Shapes)
+- Every shape uses the same 60×40 local coordinate box the original palette
+  icons used, and gate bodies reuse those icons' exact SVG path `d` strings,
+  so gates look identical to the pre-rewrite design.
+- `Gate` — one element type shared by all 9 gates; `createGate(type,
+  inputCount)` sets `data-type`, builds the right path markup, and adds
+  `in`/`out` ports named with the cell's own id (valid immediately at
+  construction, before the cell is ever added to a graph).
+- `ToggleSwitch`, `PushButton`, `Clock`, `HighConstant`, `LowConstant` —
+  single-output sources. `LightBulb` — single input, positioned **below**
+  the glass (the old design's "wire enters from below" bulb orientation).
+  `FourBitDigit` — 4 inputs, index 0 = top = most significant bit.
+- Every shape's root `<g>` carries the SAME top-level classes the old DOM
+  version used (`.control.toggle-switch`, `.control.logic-gate`, ...), so
+  `style.css`'s color rules apply with `fill`/`stroke` in place of
+  `background`/`border`, reading the same custom properties as before (dark
+  mode keeps working unchanged).
+- `Wire` — a `joint.dia.Link` subclass whose markup is two stacked
+  `<path>`s (`.wire-outline` under `.wire`), matching the old hand-drawn
+  wire look exactly.
 
-  | Stage | Slower than 60 fps by | Update cost | Dialog |
-  |---|---|---|---|
-  | 1 | 20% | ≈ 20.8 ms | notice |
-  | 2 | 35% | ≈ 25.6 ms | warning |
-  | 3 | 50% | ≈ 33.3 ms | **DIRE** (red, focus on the safe button) |
+### 3. `canvas.js` (Paper, Palette, Pan/Zoom, Wire Creation)
+- Creates the one `joint.dia.Graph` + `joint.dia.Paper` for the app.
+  `defaultLink: () => new Shapes.Wire()` and `validateConnection` (output-
+  only sources, one wire per input, no self-loops) are JointJS's own
+  built-in "drag from a magnet to create a link" mechanism — there is no
+  hand-rolled wire-dragging code any more.
+- `interactive` (a Paper option, not a separate handler) declines: link-body
+  dragging entirely (wires are fixed once connected); a ToggleSwitch's or
+  PushButton's own `elementMove`, since their whole visible face is the
+  press/click target (logic.js); and any control's `elementMove` while it is
+  part of a >1-member selection, so selection.js can move the group by hand.
+  Every other control still uses JointJS's own built-in single-element drag,
+  completely unmodified.
+- **Palette drag-and-drop**: `.palette-item`s stay plain HTML with native
+  HTML5 drag/drop (JointJS core has no ready-made stencil panel — that's
+  Rappid's `ui.Stencil`); `placeControl(type, x, y)` creates the matching
+  shapes.js element instead of cloning an HTML `<template>`.
+- **Pan**: dragging empty canvas adjusts `paper.translate()` by hand — core
+  has no drag-to-pan built in either (Rappid's `ui.PaperScroller` does) — but
+  it's still "JointJS's own pan", just driven manually against the paper
+  instead of a CSS transform on a hand-built world div.
+- **Zoom**: `zoomTo(scale, clientX, clientY)` rescales via `paper.scale()`,
+  keeping the given SCREEN point fixed (the standard JointJS "read the local
+  point, rescale, re-translate" recipe) — with no point given, it zooms
+  toward the viewport's center, which is what the slider and +/- buttons
+  use. The mouse **wheel** zooms toward the **cursor**, in the same 10%
+  steps as the buttons (`zoomInStep`/`zoomOutStep`).
+- **Wire creation** (folded in from the old, separate `wires.js` — see the
+  Module Architecture Overview above for why): `graph.on('change:target',
+  ...)` fires once a dragged link's loose end lands on a real port; the
+  gate-limit approval (limits.js) runs here, since `validateConnection` must
+  answer synchronously and can't await a dialog — the link is removed again
+  if the user declines.
 
-  "Keep going" accepts that stage. "Stop adding gates" (or Escape) revokes every approval, so the 10-gate limit applies to new connections again. If the cost falls back below a stage, that stage can prompt again later. These numbers are best assumptions and are easy to change (`SPEED_STAGES`).
-- **Truth-table cap.** A circuit's master table has 2ⁿ rows for n switch inputs. Up to `TABLE_INPUT_LIMIT` = 10 it is built automatically; above that a message with a **Show anyway** button (per circuit, behind a warning dialog) appears; above `TABLE_INPUT_HARD_LIMIT` = 14 it is never built.
-- **Prompt queue.** `confirm(options)` queues dialogs so two are never on screen at once. `popups.js` registers the drawing function with `setPromptHandler()`.
+### 4. `limits.js` (Circuit limits & speed guard)
+Unchanged. Still the shared gate-count cap (10 per circuit, with an approval
+dialog above that), the speed guard (20% / 35% / 50%-slower staged warnings
+once a circuit has been uncapped), and the truth-table input cap (10 / 14).
+See the file's own header comment for the full numbers — none of them
+changed with the rendering rewrite.
 
-### 2. `canvas.js` (Palette & Canvas Interaction)
-- **Palette drag-and-drop:** reads `data-type` from the dragged `.palette-item`, clones `#tpl-<data-type>` (or `#tpl-logic-gate` for gates) into `#canvas-world` at the drop point (converted with `clientToWorld`, so it is correct at any zoom or scroll). For gates, reads `data-min-inputs`/`data-default-inputs` to build the `.node.node-in.unattached` elements.
-- **Positioning:** `beginControlDrag()` moves one control, or the whole selection if the control is part of it. Movement is divided by the zoom level, clamped to the world, and started only after a 3 px threshold. Each move fires `control:move`.
-- Cleans up a control's DOM element and node registrations when `control:remove` fires.
+### 5. `selection.js` (Selection & Transformations)
+- Click-select and Ctrl-click use `paper.on('element:pointerclick', ...)` /
+  `'link:pointerclick'` / `'blank:pointerclick'`.
+- `#btn-multiselect` arms a rubber-band on `'blank:pointerdown'`, using the
+  built-in `paper.findViewsInArea(bounds)` in place of the old manual
+  bounding-box comparison; with it off, dragging empty space pans instead
+  (canvas.js's `beginPan`).
+- Dragging a **multi**-selection is still hand-rolled (`element:pointerdown`
+  + manual `mousemove`/`mouseup`, moving every selected cell's `position()`
+  by the same delta) — moving several cells as one gesture is a Rappid
+  `SelectionView` feature, not part of open-source core. A single selected
+  (or unselected) control still uses JointJS's own built-in drag untouched,
+  since canvas.js's `interactive` option only declines it for the
+  multi-selected case.
+- Delete/Backspace, cut/copy/paste, group are the same idea as before.
+- **Flip is now cosmetic only**: it mirrors the shape's own markup via
+  `cell.attr('root/transform', 'translate(...) scale(±1,±1)')`, but does
+  **not** relocate which side a port renders on the way the old DOM
+  version's light-bulb top/bottom flip did — a flipped control's wires keep
+  leaving from their original side. (Known, deliberate simplification —
+  the port-relocation API needed to do this properly wasn't something this
+  rewrite could verify safely without a live browser test.)
 
-### 3. `wires.js` (Wire Management)
-- **Creation:** the mousedown router calls `beginWireDrag()` for a press on a `.node-out`; a live `<path class="wire pending">` follows the cursor.
-- **Constraints:** outputs accept unlimited wires; an input accepts **at most one** (a drop on an occupied input is rejected with a brief red `.reject-flash`). While dragging, unoccupied `.node-in` elements get `.drop-target`; it is cleared when the drag ends. The drop hit-test uses `elementsFromPoint`, so a wire lying across a node cannot hide it.
-- **Limits:** before a wire is created, `limits.checkConnection()` may require the user's approval (§1b).
-- **Geometry:** each node's offset inside its control is measured once (placement, input-count change, flip, fonts loaded) and cached. Wire endpoints = `control.x/y` + cached offset, so nothing reads layout per wire while dragging. Moves mark controls dirty and one `requestAnimationFrame` redraws only the wires attached to them.
-- **Direction:** outputs leave to the right and inputs enter from the left, except a node with `data-side` (the light bulb's input is `bottom`, so its wire enters vertically from below). `flipH`/`flipV` mirror the sides.
-- **Signal rendering:** `logic.js` toggles `.signal-high`, `.signal-low` and `.signal-clock`.
+### 6. `logic.js` (Simulation & Gate Logic)
+Gate truth tables, Tri-State, the shared clock timer, and Play/Stop are
+**unchanged in behavior**. What changed is only how a source's value is read
+and toggled, since controls are SVG shapes now, not real HTML form controls:
+- **Toggle switch**: no real `<input type="checkbox">` any more. Clicking
+  the switch's track toggles a `.checked` class on the cell's root `<g>`;
+  `getSourceValue` reads that class instead of `.checked`. canvas.js's
+  `interactive` option keeps this click from being mistaken for an element
+  drag, and selection.js's own click listener still runs too — a click both
+  toggles AND selects the switch, same dual effect as before.
+- **Push button**: press/release toggles `.pushed` on the `.push-button-
+  inner` circle — same class name as before, just queried from a flat SVG
+  shape instead of a nested HTML one, so `style.css` targets
+  `.push-button-inner.pushed` directly rather than a descendant selector.
+- Everything else reads `control.el`/`wire.pathEl` exactly as it always did,
+  because `SVGElement` supports `classList`/`querySelector` like any HTML
+  element.
 
-### 4. `selection.js` (Selection & Transformations)
-- Click on a `.control` sets the single selection and toggles `.selected`; Ctrl/Cmd-click adds or removes. A click on empty canvas clears it. A wire click selects the wire.
-- `#btn-multiselect` arms the rubber-band: dragging empty space draws a box in world coordinates and selects every intersecting control (hold Ctrl/Cmd to add to the current selection). With it off, dragging empty space pans (§8).
-- Delete/Backspace and `#btn-delete` remove selected controls and wires (and any wire attached to a removed control). **Wires and controls are deleted only this way — the eraser tool was removed.**
-- `#btn-cut/copy/paste`, `#btn-flip-h/v` (CSS `scale(±1)`, then `control:flip`), and `#btn-group` (shared `groupId`; clicking any member re-selects the group).
-- After a pan, a control drag or a rubber-band, the browser's trailing click is swallowed (`swallowNextClick`) so it cannot clear or change the selection.
+### 7. `tables.js` (Truth Table Generator)
+Unchanged except the master-table row-click handler, which now does
+`control.el.classList.toggle('checked', ...)` instead of setting a
+checkbox's `.checked` property (same reason as logic.js §6).
 
-### 5. `logic.js` (Simulation & Gate Logic)
-- **Gates:** Buffer, NOT, AND, NAND, OR, NOR, XOR, XNOR. **Tri-State:** `data` (index 0) + active-low `enable` (index 1); enable = 0 → output = data; enable = 1 → high-impedance (no signal class on the outgoing wire).
-- **Evaluation** is an iterative pass over all controls that stops as soon as a pass changes nothing. Each run is timed and reported to `limits.js`. Bursts of events are coalesced with `scheduleEvaluate()`.
-- **Sources:** toggle switch (checkbox), push button (press and hold), clock, high/low constant. **Sinks:** light bulb (`.on`), 4-bit digit (node 0 = most significant bit).
-- **Clocks** share **one** timer (a 800 ms half-period). Each clock keeps its own value and **starts low when placed**, so clocks placed at different moments can be opposite each other. The indicator is the `.on` class (no CSS animation).
-- **Playback:** `#btn-play` iterates through every combination of the canvas's toggle switches; `#btn-stop` stops it. (Step-forward/step-back were removed with the canvas control box.)
+### 8. `popups.js` (Dialog & Note Handlers)
+- `#note-popup`'s open triggers moved from raw DOM `click`/`dblclick`
+  listeners to `paper.on('element:pointerclick'/'element:pointerdblclick',
+  ...)` — same pencil-then-click / double-click-except-Push-Button behavior
+  as before, just driven by the Paper's own cell events instead of a
+  hand-rolled `event.target.closest('.control')` check.
+- `setGateInputCount` now calls `control.cell.addPort({...})` /
+  `control.cell.removePort(nodeId)` to grow/shrink a gate's inputs, instead
+  of creating/removing DOM nodes by hand; any wire on a removed input is
+  still deleted first, same as before.
+- `#clear-all-confirm`, `#limit-popup` (registered as limits.js's prompt
+  handler) are otherwise unchanged. `#input-count-popup` and
+  `openInputCountPopup()` were removed: they were a dead, never-triggered
+  standalone alternative to `#note-popup`'s own embedded input-count
+  stepper, which is the only input-count UI actually wired up.
 
-### 6. `tables.js` (Truth Table Generator)
-- Every gate not wired into a larger circuit gets its own table; wired-together controls are grouped (`App.getComponents`) under a cloned `#logic-circuit-template` with a master table of all switch combinations against the outputs, plus each member gate's table.
-- Clicking a master-table row sets the real switches to that combination.
-- Over 10 switch inputs the master table is replaced by a message with **Show anyway**; over 14 it is never built (§1b). Rebuilds are coalesced and timed for the speed guard.
-
-### 7. `popups.js` (Dialog & Note Handlers)
-- `#btn-note` (then a click) or a double-click on a placed control opens `#note-popup`. **Exception: a Push Button ignores double-click** (a double-click is two quick presses) and opens its note **only** through the pencil.
-- `#note-input-count-section` shows only for logic gates; changing the count adds/removes nodes without touching unaffected wires (Buffer and NOT are locked at 1; other gates have a minimum of their `data-min-inputs`).
-- `#input-count-popup`, `#clear-all-confirm`, `#lonly-prompt` ("Yes" opens `datingSimIndex.html` in a **new tab**), and the `#login-popup` stub (no markup yet).
-- `#limit-popup` is the shared warning dialog for `limits.js` (severity classes `limit-notice` / `limit-warning` / `limit-dire`; Escape cancels).
-
-### 8. `toolbar.js` (Toolbar Controls, Zoom & Pan)
-- Binds `#btn-save`, `#btn-print`, `#btn-undo`/`#btn-redo` (stubs — no history stack yet), `#btn-grid`, `#btn-select`, `#btn-pan`, `#btn-clear-all` (via `popups.js`), `#btn-play`, `#btn-stop`, `#btn-help`.
-- **Zoom** (`#zoom-slider`, `#btn-zoom-in/out`, 50%–200%, 10% steps) scales `#canvas-world` as **one layer**, so every control keeps its original size relative to the others. `#canvas-sizer` is resized to (world × zoom) so the scrollbars match, and the middle of the view stays fixed.
-- **The canvas is a scrollable world** of `WORLD_SIZE` × `WORLD_SIZE` pixels (a practical limit). The view starts centered; scrollbars stay visible. Panning: the pan tool, or dragging empty space with either tool (unless multi-select is armed).
-
-### 9. `theme.js` (Theme Persistence)
-- Listens to `#dark-mode-toggle`, toggling `.dark-mode` on `<body>`; stores the choice under the `localStorage` key `darkMode`; reads it safely on startup inside `try/catch`.
+### 9. `toolbar.js` (Toolbar Controls, Zoom & Theme)
+- Binds the toolbar buttons; `#btn-clear-all` opens the confirm via
+  popups.js; Play/Stop call logic.js.
+- The zoom slider and +/- buttons call canvas.js's `zoomTo()`-family
+  functions and keep the slider's displayed value in sync via app.js's
+  `'zoom:change'` event — the same math the mouse wheel uses, so all three
+  always agree.
+- `#btn-select`/`#btn-pan` just record which tool a drag on empty canvas
+  means (`Canvas.setPanTool`); the actual pan is `canvas.js`'s `beginPan`.
+- **Dark mode** (folded in from the old, separate `theme.js` — see the
+  Module Architecture Overview above for why): toggles `.dark-mode` on
+  `<body>` and persists the choice under the `localStorage` key `darkMode`,
+  read back inside `try/catch`.
 
 ### 10. `main.js` (Entry Point)
-- Imports every module (which starts each one) and runs the first pass: size and center the world, `evaluate()`, `Tables.rebuild()`.
-- **Mousedown router** — one listener on `#canvas` (left button only) replaces the four separate mousedown handlers:
-  1. press on a `.node-out` → `Wires.beginWireDrag`
-  2. press on a control's body → `Canvas.beginControlDrag` (ignored by the pan tool; input nodes and a control's own inputs/buttons/switch are left alone)
-  3. press on empty space with multi-select armed → `Selection.beginRubberBand`
-  4. press on empty space otherwise → `Toolbar.beginPan`
+Imports every module (which starts each one — see the import-order note in
+the Module Architecture Overview above) and runs the first pass: size/center
+the paper, `Logic.evaluate()`, `Tables.rebuild()`.
